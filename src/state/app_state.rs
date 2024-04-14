@@ -1,4 +1,13 @@
-use crate::collections::structs::{BindGroups, Buffers, Params, Pipelines, VERTICES};
+use crate::{
+    collections::{
+        structs::{BindGroups, Buffers, Params, Pipelines},
+        vertices::VERTICES,
+    },
+    init::init_functions::{
+        init_bind_groups, init_buffers, init_params, init_pipelines, init_shader_modules,
+        init_textures,
+    },
+};
 use std::sync::Arc;
 
 // use super::control_state::{update_controls, KeyboardState};
@@ -88,7 +97,7 @@ impl<'a> State<'a> {
         let textures = init_textures(&device, &queue);
         let bind_groups = init_bind_groups(&device, &buffers, &textures);
         let pipelines = init_pipelines(&device, &bind_groups, &shader_modules);
-        let controls = KeyboardState::new();
+        // let controls = KeyboardState::new();
 
         Self {
             device,
@@ -142,7 +151,7 @@ impl<'a> State<'a> {
 
             render_pass.set_bind_group(0, &self.bind_groups.uniform_bg, &[]);
             render_pass.set_bind_group(1, &self.bind_groups.sampled_texture_bg, &[]);
-            render_pass.set_vertex_buffer(0, self.buffers.vertex_buf.slice(..));
+            render_pass.set_vertex_buffer(0, self.buffers.vertex.slice(..));
 
             let vertex_range = 0..VERTICES.len() as u32;
             let instance_range = 0..1;
