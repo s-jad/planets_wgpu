@@ -1,43 +1,15 @@
 #[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub(crate) struct Vertex {
-    pub(crate) position: [f32; 2],
-}
-
-pub(crate) const VERTICES: &[Vertex; 6] = &[
-    // Bottom left triangle
-    Vertex {
-        position: [-1.0, -1.0],
-    },
-    Vertex {
-        position: [1.0, -1.0],
-    },
-    Vertex {
-        position: [-1.0, 1.0],
-    },
-    // Top right triangle
-    Vertex {
-        position: [1.0, -1.0],
-    },
-    Vertex {
-        position: [1.0, 1.0],
-    },
-    Vertex {
-        position: [-1.0, 1.0],
-    },
-];
-
-#[repr(C)]
 #[derive(Copy, Clone)]
 pub(crate) struct TimeUniform {
     pub(crate) time: f32,
 }
 #[derive(Debug)]
 pub(crate) struct Buffers {
-    pub(crate) vertex_buf: wgpu::Buffer,
-    pub(crate) time_uniform_buf: wgpu::Buffer,
-    pub(crate) generic_debug_buf: wgpu::Buffer,
-    pub(crate) cpu_read_generic_debug_buf: wgpu::Buffer,
+    pub(crate) vertex: wgpu::Buffer,
+    pub(crate) time_uniform: wgpu::Buffer,
+    pub(crate) terrain_params: wgpu::Buffer,
+    pub(crate) generic_debug: wgpu::Buffer,
+    pub(crate) cpu_read_generic_debug: wgpu::Buffer,
 }
 
 #[derive(Debug)]
@@ -56,7 +28,7 @@ pub(crate) struct BindGroups {
 pub(crate) struct ShaderModules {
     pub(crate) v_shader: wgpu::ShaderModule,
     pub(crate) f_shader: wgpu::ShaderModule,
-    //pub(crate) generate_terrain_shader: wgpu::ShaderModule,
+    pub(crate) generate_terrain: wgpu::ShaderModule,
 }
 
 #[derive(Debug)]
