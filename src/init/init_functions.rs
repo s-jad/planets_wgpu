@@ -134,6 +134,22 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
         mapped_at_creation: false,
     });
 
+    let generic_debug_array = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Debug Shaders Buffer"),
+        size: (std::mem::size_of::<[[f32; 4]; 512]>()) as wgpu::BufferAddress,
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let cpu_read_generic_debug_array = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("CPU Readable Buffer - Debug Shaders"),
+        size: (std::mem::size_of::<[[f32; 4]; 512]>()) as wgpu::BufferAddress,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
     Buffers {
         vertex,
         time_uniform,
@@ -142,6 +158,8 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
         view_params,
         generic_debug,
         cpu_read_generic_debug,
+        generic_debug_array,
+        cpu_read_generic_debug_array,
     }
 }
 
@@ -196,6 +214,18 @@ pub(crate) fn init_bind_groups(
                 count: None,
             },
             wgpu::BindGroupLayoutEntry {
+                binding: 8,
+                visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(
+                        std::mem::size_of::<[[f32; 4]; 512]>() as _
+                    ),
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
                 binding: 9,
                 visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
@@ -221,6 +251,10 @@ pub(crate) fn init_bind_groups(
                 resource: buffers.view_params.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
+                binding: 8,
+                resource: buffers.generic_debug_array.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
                 binding: 9,
                 resource: buffers.generic_debug.as_entire_binding(),
             },
@@ -238,6 +272,18 @@ pub(crate) fn init_bind_groups(
                     has_dynamic_offset: false,
                     min_binding_size: wgpu::BufferSize::new(
                         std::mem::size_of::<TerrainParams>() as _
+                    ),
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 8,
+                visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(
+                        std::mem::size_of::<[[f32; 4]; 512]>() as _
                     ),
                 },
                 count: None,
@@ -262,6 +308,10 @@ pub(crate) fn init_bind_groups(
             wgpu::BindGroupEntry {
                 binding: 0,
                 resource: buffers.terrain_params.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 8,
+                resource: buffers.generic_debug_array.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 9,
