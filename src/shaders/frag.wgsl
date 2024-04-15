@@ -1,6 +1,8 @@
 // CONSTANTS
 const SCREEN_WIDTH: f32 = 1376.0;
 const SCREEN_HEIGHT: f32 = 768.0;
+const TEX_WIDTH: f32 = 1408.0;
+const TEX_HEIGHT: f32 = 800.0;
 
 struct TimeUniform {
     time: f32,
@@ -22,6 +24,8 @@ struct ViewParams {
 
 @group(1) @binding(0) var<storage, read_write> rp: RayParams;
 @group(1) @binding(1) var<storage, read_write> vp: ViewParams;
+@group(1) @binding(8) var<storage, read_write> debug_arr: array<vec4<f32>>;
+@group(1) @binding(9) var<storage, read_write> debug: vec4<f32>;
 
 @group(2) @binding(0) var terrain: texture_2d<f32>;
 @group(2) @binding(1) var terrain_sampler: sampler;
@@ -29,14 +33,18 @@ struct ViewParams {
 // ASPECT RATIO
 fn scale_aspect(fc: vec2<f32>) -> vec2<f32> {
   // Scale from screen dimensions to 0.0 --> 1.0
-  var uv: vec2<f32> = fc / vec2(SCREEN_WIDTH, SCREEN_HEIGHT);
-  uv.y = 1.0 - uv.y; // Flip Y axis if necessary
+  var uv: vec2<f32> = ((2.0 * fc) / vec2(SCREEN_WIDTH, SCREEN_HEIGHT)) - 1.0;
+  uv.y = -uv.y;
   return uv;
 }
 
 // RAY MARCHING
 fn get_terrain(pos: vec3<f32>) -> f32 {
+ let tex_uv: vec2<f32> = vec2(pos.x, pos.z) / vec2(TEX_WIDTH, TEX_HEIGHT);
+ let tx = textureSample(terrain, terrain_sampler, tex_uv);
+
   var d = pos.y + 1.0;
+  d += tx.x * 100.0; 
   
   return d;
 }
@@ -45,8 +53,6 @@ fn map(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
   var d = 0.0;
 
   d += get_terrain(pos);
-  // d += textureSample(terrain, terrain_sampler, uv).x;
-
   return d;
 }
 
@@ -163,6 +169,7 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
 fn main(@builtin(position) FragCoord: vec4<f32>) -> @location(0) vec4<f32> {
   let t: f32 = tu.time * vp.time_modifier;
   var uv: vec2<f32> = scale_aspect(FragCoord.xy); // Scale to -1.0 -> 1.0 + fix aspect ratio
+
   let uv0 = uv;
   uv.x += vp.x_shift * vp.zoom;
   uv.y += vp.y_shift * vp.zoom;
