@@ -1,7 +1,9 @@
+mod init;
 mod state;
-use collections::structs::Vertex;
+mod updates;
 use state::app_state::State;
 mod collections;
+use collections::consts::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
 use winit::{
     dpi::PhysicalSize,
@@ -9,9 +11,6 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
-
-const SCREEN_WIDTH: u32 = 1376;
-const SCREEN_HEIGHT: u32 = 768;
 
 fn main() {
     let event_loop = EventLoop::new().expect("event loop should init");
@@ -25,6 +24,8 @@ fn main() {
 
     let mut state = futures::executor::block_on(State::new(window.into()));
 
+    state.init_terrain();
+
     event_loop
         .run(move |event, elwt| match event {
             Event::WindowEvent { ref event, .. } => match event {
@@ -33,7 +34,7 @@ fn main() {
                     let elapsed_time = state.get_time();
                     let time_bytes = elapsed_time.to_ne_bytes();
                     state.queue.write_buffer(
-                        &state.buffers.time_uniform_buf,
+                        &state.buffers.time_uniform,
                         0,
                         bytemuck::cast_slice(&[time_bytes]),
                     );
@@ -54,23 +55,19 @@ fn main() {
 
                     state.window.request_redraw();
                 }
-                //WindowEvent::KeyboardInput { event, .. } => {
-                //    state.controls.handle_keyboard_input(event);
-                //}
-                //WindowEvent::Focused(focused) => {
-                //    if !focused {
-                //        // Clear the keys HashSet when the window loses focus
-                //        state.controls.clear_keys();
-                //        println!("Window lost focus, cleared keys.");
-                //    }
-                //}
+                WindowEvent::KeyboardInput { event, .. } => {
+                    state.controls.handle_keyboard_input(event);
+                }
+                WindowEvent::Focused(focused) => {
+                    if !focused {
+                        // Clear the keys HashSet when the window loses focus
+                        state.controls.clear_keys();
+                        println!("Window lost focus, cleared keys.");
+                    }
+                }
                 _ => {}
             },
             _ => {}
         })
         .expect("event loop should run");
-}
-
-fn vertices_as_bytes(data: &[Vertex]) -> &[u8] {
-    bytemuck::cast_slice(data)
 }
