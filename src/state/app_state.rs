@@ -1,5 +1,6 @@
 use crate::{
     collections::{
+        consts::{DISPATCH_SIZE_X, DISPATCH_SIZE_Y},
         structs::{BindGroups, Buffers, Params, Pipelines},
         vertices::VERTICES,
     },
@@ -7,10 +8,11 @@ use crate::{
         init_bind_groups, init_buffers, init_params, init_pipelines, init_shader_modules,
         init_textures,
     },
+    updates::param_updates::{update_cpu_read_buffers, update_view_params_buffer},
 };
 use std::sync::Arc;
 
-// use super::control_state::{update_controls, KeyboardState};
+use super::control_state::{update_controls, KeyboardState};
 
 #[derive(Debug)]
 pub(crate) struct State<'a> {
@@ -23,7 +25,7 @@ pub(crate) struct State<'a> {
     pub(crate) buffers: Buffers,
     pub(crate) bind_groups: BindGroups,
     pub(crate) pipelines: Pipelines,
-    //    pub(crate) controls: KeyboardState,
+    pub(crate) controls: KeyboardState,
     pub(crate) app_time: std::time::Instant,
     // Keep window at the bottom,
     // must be dropped after surface
@@ -97,7 +99,7 @@ impl<'a> State<'a> {
         let textures = init_textures(&device, &queue);
         let bind_groups = init_bind_groups(&device, &buffers, &textures);
         let pipelines = init_pipelines(&device, &bind_groups, &shader_modules);
-        // let controls = KeyboardState::new();
+        let controls = KeyboardState::new();
 
         Self {
             device,
@@ -109,7 +111,7 @@ impl<'a> State<'a> {
             params,
             buffers,
             bind_groups,
-            //  controls,
+            controls,
             app_time,
             // Keep at bottom, must be dropped after surface
             // and declared after it
@@ -118,7 +120,9 @@ impl<'a> State<'a> {
     }
 
     pub(crate) fn update(&mut self) {
-        // TODO
+        update_controls(self);
+        update_view_params_buffer(self);
+        update_cpu_read_buffers(self);
     }
 
     pub(crate) fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -150,7 +154,8 @@ impl<'a> State<'a> {
             render_pass.set_pipeline(&self.pipelines.render);
 
             render_pass.set_bind_group(0, &self.bind_groups.uniform_bg, &[]);
-            render_pass.set_bind_group(1, &self.bind_groups.sampled_texture_bg, &[]);
+            render_pass.set_bind_group(1, &self.bind_groups.frag_bg, &[]);
+            render_pass.set_bind_group(2, &self.bind_groups.sampled_texture_bg, &[]);
             render_pass.set_vertex_buffer(0, self.buffers.vertex.slice(..));
 
             let vertex_range = 0..VERTICES.len() as u32;
@@ -175,5 +180,28 @@ impl<'a> State<'a> {
 
     pub(crate) fn get_time(&self) -> f32 {
         self.app_time.elapsed().as_secs_f32()
+    }
+
+    pub(crate) fn init_terrain(&mut self) {
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Generate terrain - encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Generate terrain - compute pass"),
+                timestamp_writes: None,
+            });
+            compute_pass.set_pipeline(&self.pipelines.generate_terrain);
+            compute_pass.set_bind_group(0, &self.bind_groups.uniform_bg, &[]);
+            compute_pass.set_bind_group(1, &self.bind_groups.compute_bg, &[]);
+            compute_pass.set_bind_group(2, &self.bind_groups.texture_bg, &[]);
+            compute_pass.dispatch_workgroups(DISPATCH_SIZE_X, DISPATCH_SIZE_Y, 1);
+            // Adjust workgroup size as needed
+        }
+
+        self.queue.submit(Some(encoder.finish()));
     }
 }
