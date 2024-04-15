@@ -4,16 +4,17 @@ use std::time;
 
 use winit::keyboard::{KeyCode, PhysicalKey};
 
-use crate::updates::update_functions::update_pheremone_params_buffer;
-use crate::updates::update_functions::update_slime_params_buffer;
+// use crate::updates::update_functions::update_terrain_buffer;
+
+use crate::updates::param_updates::update_view_params_buffer;
 
 use super::app_state::State;
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) enum KeyboardMode {
     DEBUG,
-    SLIME,
-    PHEREMONES,
+    VIEW,
+    TERRAIN,
     PRINT,
 }
 
@@ -102,25 +103,25 @@ pub(crate) fn update_controls(state: &mut State) {
         state.controls.set_mode(KeyboardMode::DEBUG);
     } else if state
         .controls
+        .key_pressed(PhysicalKey::Code(KeyCode::Digit1))
+    {
+        state.controls.set_mode(KeyboardMode::TERRAIN);
+    } else if state
+        .controls
         .key_pressed(PhysicalKey::Code(KeyCode::Digit2))
     {
-        state.controls.set_mode(KeyboardMode::SLIME);
+        state.controls.set_mode(KeyboardMode::VIEW);
     } else if state
         .controls
         .key_pressed(PhysicalKey::Code(KeyCode::Digit3))
-    {
-        state.controls.set_mode(KeyboardMode::PHEREMONES);
-    } else if state
-        .controls
-        .key_pressed(PhysicalKey::Code(KeyCode::Digit4))
     {
         state.controls.set_mode(KeyboardMode::PRINT);
     }
 
     match state.controls.get_mode() {
         KeyboardMode::DEBUG => debug_controls(state),
-        KeyboardMode::SLIME => slime_controls(state),
-        KeyboardMode::PHEREMONES => pheremone_controls(state),
+        KeyboardMode::VIEW => view_controls(state),
+        KeyboardMode::TERRAIN => terrain_controls(state),
         KeyboardMode::PRINT => print_controls(state),
     }
 }
@@ -131,82 +132,58 @@ fn debug_controls(state: &mut State) {
     if pressed.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
         print_gpu_data::<[f32; 4]>(
             &state.device,
-            &state.buffers.cpu_read_generic_debug_buf,
+            &state.buffers.cpu_read_generic_debug,
             "Debug",
         );
         thread::sleep(time::Duration::from_millis(50));
-        state.controls.set_mode(KeyboardMode::PRINT);
+        state.controls.set_mode(KeyboardMode::TERRAIN);
     }
 }
 
-fn slime_controls(state: &mut State) {
+fn terrain_controls(state: &mut State) {
     let pressed = state.controls.get_keys();
-    let mut dval = 0.0f32;
+    let mut dval_f = 0.0f32;
+    let mut dval_i = 0i32;
 
     if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowUp)) {
-        dval = 1.0f32;
+        dval_f = 1.0f32;
+        dval_i = 1;
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowDown)) {
-        dval = -1.0f32;
+        dval_f = -1.0f32;
+        dval_i = -1;
     }
 
-    // MOVEMENT
-    if pressed.contains(&PhysicalKey::Code(KeyCode::Period)) {
-        let maxv = &mut state.params.slime_params.max_velocity;
-        *maxv = f32::max(0.1, *maxv + (1e-5f32 * dval));
-        update_slime_params_buffer(state);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::Comma)) {
-        let minv = &mut state.params.slime_params.min_velocity;
-        *minv = f32::max(0.0, *minv + (1e-5f32 * dval));
-        update_slime_params_buffer(state);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyT)) {
-        let tf = &mut state.params.slime_params.turn_factor;
-        *tf = f32::max(0.0, *tf + (1e-6f32 * dval));
-        update_slime_params_buffer(state);
-
-    // SENSORS
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyS))
-        && pressed.contains(&PhysicalKey::Code(KeyCode::KeyD))
-    {
-        let tf = &mut state.params.slime_params.sensor_dist;
-        *tf = f32::max(0.0, *tf + (0.001 * dval));
-        update_slime_params_buffer(state);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyS))
-        && pressed.contains(&PhysicalKey::Code(KeyCode::KeyA))
-    {
-        let tf = &mut state.params.slime_params.sensor_offset;
-        *tf = f32::max(0.0, *tf + (0.1 * dval));
-        update_slime_params_buffer(state);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyS))
-        && pressed.contains(&PhysicalKey::Code(KeyCode::KeyR))
-    {
-        let tf = &mut state.params.slime_params.sensor_radius;
-        *tf = f32::max(0.0, *tf + (0.001 * dval));
-        update_slime_params_buffer(state);
-    }
+    // FBM
+    //  if pressed.contains(&PhysicalKey::Code(KeyCode::Period)) {
+    //      let maxv = &mut state.params.terrain_params.octaves;
+    //      *maxv = i32::max(0i32, *maxv + (1 * dval_i));
+    //      update_terrain_params_buffer(state);
+    //  }
 }
 
-fn pheremone_controls(state: &mut State) {
+fn view_controls(state: &mut State) {
     let pressed = state.controls.get_keys();
-    let mut dval = 0.0f32;
 
-    if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowUp)) {
-        dval = 1.0f32;
+    if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowLeft)) {
+        state.params.view_params.x_shift -= 0.01 / state.params.view_params.zoom;
+        update_view_params_buffer(state);
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowRight)) {
+        state.params.view_params.x_shift += 0.01 / state.params.view_params.zoom;
+        update_view_params_buffer(state);
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowUp)) {
+        state.params.view_params.y_shift += 0.01 / state.params.view_params.zoom;
+        update_view_params_buffer(state);
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowDown)) {
-        dval = -1.0f32;
-    }
-
-    if pressed.contains(&PhysicalKey::Code(KeyCode::KeyA)) {
-        let maxv = &mut state.params.pheremone_params.deposition_amount;
-        *maxv = f32::max(0.0, *maxv + (0.003 * dval));
-        update_pheremone_params_buffer(state);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
-        let minv = &mut state.params.pheremone_params.diffusion_factor;
-        *minv = f32::max(0.0, *minv + (0.03 * dval));
-        update_pheremone_params_buffer(state);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyD)) {
-        let tf = &mut state.params.pheremone_params.decay_factor;
-        *tf = f32::max(0.0, *tf + (0.003 * dval));
-        update_pheremone_params_buffer(state);
+        state.params.view_params.y_shift -= 0.01 / state.params.view_params.zoom;
+        update_view_params_buffer(state);
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyX)) {
+        let mz = state.params.view_params.zoom;
+        state.params.view_params.zoom -= 0.1 * mz;
+        update_view_params_buffer(state);
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyY)) {
+        let mz = state.params.view_params.zoom;
+        state.params.view_params.zoom += 0.1 * mz;
+        update_view_params_buffer(state);
     }
 }
 
@@ -214,128 +191,19 @@ fn print_controls(state: &State) {
     let pressed = state.controls.get_keys();
 
     // PRINT CURRENT FRAME --------------------------------------------------------
-    if pressed.contains(&PhysicalKey::Code(KeyCode::Space)) {
-        capture_frame_and_save(&state.device, &state.queue, &state.surface);
-    }
+    //if pressed.contains(&PhysicalKey::Code(KeyCode::Space)) {
+    //    capture_frame_and_save(&state.device, &state.queue, &state.surface);
+    //}
 
     // PRINT CURRENT PARAMETER VALUES ----------------------------------------------
-    if pressed.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
-        println!("\nslime_params:\n{:#?}", state.params.slime_params);
+    if pressed.contains(&PhysicalKey::Code(KeyCode::KeyT)) {
+        println!("\nterrain_params:\n{:#?}", state.params.terrain_params);
         thread::sleep(time::Duration::from_millis(50));
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::Period)) {
-        println!("\npheremone_params:\n{:#?}", state.params.pheremone_params);
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyV)) {
+        println!("\nterrain_params:\n{:#?}", state.params.view_params);
+        thread::sleep(time::Duration::from_millis(50));
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyR)) {
+        println!("\nterrain_params:\n{:#?}", state.params.ray_params);
         thread::sleep(time::Duration::from_millis(50));
     }
-}
-
-// TODO! FIX ME!
-fn capture_frame_and_save(device: &wgpu::Device, queue: &wgpu::Queue, surface: &wgpu::Surface) {
-    // Capture the current frame
-    let output = surface
-        .get_current_texture()
-        .expect("Failed to acquire next swap chain texture");
-
-    // Ensure bytes per row is multiple of 256 as per wgpu standard
-    let output_width = ((output.texture.size().width + 255) / 256) * 256;
-    let output_height = ((output.texture.size().height + 255) / 256) * 256;
-
-    println!("output_width: {:?}", output_width);
-    println!("output_height: {:?}", output_height);
-    // Create a buffer to store the frame data
-    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        size: output_width as wgpu::BufferAddress * output_height as wgpu::BufferAddress * 4, // Assuming RGBA8 format
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        label: Some("Frame Data Buffer"),
-        mapped_at_creation: false,
-    });
-
-    let render_texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("Render Texture"),
-        size: wgpu::Extent3d {
-            width: output_width,
-            height: output_height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8UnormSrgb,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    });
-
-    // Create a view for the texture
-    let render_texture_view = render_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("Capture Frame Encoder"),
-    });
-
-    {
-        // Set up a render pass that targets your texture
-        let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &render_texture_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            ..Default::default()
-        });
-    }
-
-    // Copy the texture data to the buffer
-    encoder.copy_texture_to_buffer(
-        wgpu::ImageCopyTexture {
-            texture: &render_texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::ImageCopyBuffer {
-            buffer: &buffer,
-            layout: wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(output_width * 4),
-                rows_per_image: Some(output_height),
-            },
-        },
-        output.texture.size(),
-    );
-
-    queue.submit(Some(encoder.finish()));
-
-    // Wait for the GPU to finish copying the data
-    device.poll(wgpu::Maintain::Wait);
-
-    // Map the buffer's memory to the CPU
-    let frame_data = buffer
-        .slice(..)
-        .get_mapped_range()
-        .iter()
-        .map(|b| *b)
-        .collect::<Vec<u8>>();
-
-    // Create an ImageBuffer from the frame data
-    let img = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
-        output_width,
-        output_height,
-        &frame_data[..],
-    )
-    .unwrap();
-
-    // Save the image as a PNG file
-    let screenshot_path =
-        std::path::Path::new("~/Pictures/wgpu_screenshots").join(format!("{:0}.png", output_width));
-
-    img.save(screenshot_path)
-        .expect("Failed to save screenshot");
-
-    // Unmap the buffer's memory
-    drop(frame_data);
-    buffer.unmap();
 }
