@@ -35,5 +35,13 @@ pub(crate) fn update_cpu_read_buffers(state: &mut State) {
         (std::mem::size_of::<[f32; 4]>()) as wgpu::BufferAddress,
     );
 
+    encoder.copy_buffer_to_buffer(
+        &state.buffers.generic_debug_array,
+        0,
+        &state.buffers.cpu_read_generic_debug_array,
+        0,
+        (std::mem::size_of::<[[f32; 4]; 512]>()) as wgpu::BufferAddress,
+    );
+
     state.queue.submit(Some(encoder.finish()));
 }
