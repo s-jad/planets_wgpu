@@ -8,6 +8,8 @@ pub(crate) struct Buffers {
     pub(crate) vertex: wgpu::Buffer,
     pub(crate) time_uniform: wgpu::Buffer,
     pub(crate) terrain_params: wgpu::Buffer,
+    pub(crate) ray_params: wgpu::Buffer,
+    pub(crate) view_params: wgpu::Buffer,
     pub(crate) generic_debug: wgpu::Buffer,
     pub(crate) cpu_read_generic_debug: wgpu::Buffer,
 }
@@ -16,6 +18,8 @@ pub(crate) struct Buffers {
 pub(crate) struct BindGroups {
     pub(crate) uniform_bg: wgpu::BindGroup,
     pub(crate) uniform_bgl: wgpu::BindGroupLayout,
+    pub(crate) frag_bg: wgpu::BindGroup,
+    pub(crate) frag_bgl: wgpu::BindGroupLayout,
     pub(crate) compute_bg: wgpu::BindGroup,
     pub(crate) compute_bgl: wgpu::BindGroupLayout,
     pub(crate) texture_bg: wgpu::BindGroup,
@@ -47,10 +51,29 @@ pub(crate) struct Textures {
 #[derive(Debug)]
 pub(crate) struct Params {
     pub(crate) terrain_params: TerrainParams,
+    pub(crate) ray_params: RayParams,
+    pub(crate) view_params: ViewParams,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct RayParams {
+    pub(crate) epsilon: f32,
+    pub(crate) max_steps: f32,
+    pub(crate) max_dist: f32,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct TerrainParams {
-    pub(crate) octaves: u32,
+    pub(crate) octaves: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct ViewParams {
+    pub(crate) x_shift: f32,
+    pub(crate) y_shift: f32,
+    pub(crate) zoom: f32,
+    pub(crate) time_modifier: f32,
 }
