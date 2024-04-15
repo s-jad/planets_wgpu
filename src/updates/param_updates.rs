@@ -1,0 +1,39 @@
+use crate::{collections::structs::ViewParams, state::app_state::State};
+
+pub(crate) fn update(state: &mut State) {
+    update_view_params_buffer(state);
+    update_cpu_read_buffers(state);
+}
+
+pub(crate) fn update_view_params_buffer(state: &mut State) {
+    let new_view_params = ViewParams {
+        x_shift: state.params.view_params.x_shift,
+        y_shift: state.params.view_params.y_shift,
+        zoom: state.params.view_params.zoom,
+        time_modifier: state.params.view_params.time_modifier,
+    };
+
+    state.queue.write_buffer(
+        &state.buffers.view_params,
+        0,
+        bytemuck::cast_slice(&[new_view_params]),
+    );
+}
+
+pub(crate) fn update_cpu_read_buffers(state: &mut State) {
+    let mut encoder = state
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("update_cpu_read_buffers encoder"),
+        });
+
+    encoder.copy_buffer_to_buffer(
+        &state.buffers.generic_debug,
+        0,
+        &state.buffers.cpu_read_generic_debug,
+        0,
+        (std::mem::size_of::<[f32; 4]>()) as wgpu::BufferAddress,
+    );
+
+    state.queue.submit(Some(encoder.finish()));
+}
