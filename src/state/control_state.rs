@@ -137,6 +137,14 @@ fn debug_controls(state: &mut State) {
         );
         thread::sleep(time::Duration::from_millis(50));
         state.controls.set_mode(KeyboardMode::TERRAIN);
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyA)) {
+        print_gpu_data::<[[f32; 4]; 512]>(
+            &state.device,
+            &state.buffers.cpu_read_generic_debug_array,
+            "Debug",
+        );
+        thread::sleep(time::Duration::from_millis(50));
+        state.controls.set_mode(KeyboardMode::TERRAIN);
     }
 }
 
