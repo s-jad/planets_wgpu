@@ -12,6 +12,8 @@ pub(crate) struct Buffers {
     pub(crate) view_params: wgpu::Buffer,
     pub(crate) generic_debug: wgpu::Buffer,
     pub(crate) cpu_read_generic_debug: wgpu::Buffer,
+    pub(crate) generic_debug_array: wgpu::Buffer,
+    pub(crate) cpu_read_generic_debug_array: wgpu::Buffer,
 }
 
 #[derive(Debug)]
