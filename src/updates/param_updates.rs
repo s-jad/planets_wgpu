@@ -9,8 +9,11 @@ pub(crate) fn update_view_params_buffer(state: &mut State) {
     let new_view_params = ViewParams {
         x_shift: state.params.view_params.x_shift,
         y_shift: state.params.view_params.y_shift,
+        x_rot: state.params.view_params.x_rot,
+        y_rot: state.params.view_params.y_rot,
         zoom: state.params.view_params.zoom,
         time_modifier: state.params.view_params.time_modifier,
+        fov_degrees: state.params.view_params.fov_degrees,
     };
 
     state.queue.write_buffer(
