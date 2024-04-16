@@ -174,17 +174,37 @@ fn view_controls(state: &mut State) {
     let mz = state.params.view_params.zoom;
 
     if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowLeft)) {
-        state.params.view_params.x_shift -= 0.01 / mz;
-        update_view_params_buffer(state);
+        if pressed.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
+            state.params.view_params.x_rot = f32::max(0.0, state.params.view_params.x_rot - 0.01);
+            update_view_params_buffer(state);
+        } else {
+            state.params.view_params.x_shift -= 0.01 / mz;
+            update_view_params_buffer(state);
+        }
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowRight)) {
-        state.params.view_params.x_shift += 0.01 / mz;
-        update_view_params_buffer(state);
+        if pressed.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
+            state.params.view_params.x_rot += 0.01;
+            update_view_params_buffer(state);
+        } else {
+            state.params.view_params.x_shift += 0.01 / mz;
+            update_view_params_buffer(state);
+        }
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowUp)) {
-        state.params.view_params.y_shift += 0.01 / mz;
-        update_view_params_buffer(state);
+        if pressed.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
+            state.params.view_params.y_rot = f32::max(0.0, state.params.view_params.y_rot - 0.01);
+            update_view_params_buffer(state);
+        } else {
+            state.params.view_params.y_shift -= 0.01 / mz;
+            update_view_params_buffer(state);
+        }
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowDown)) {
-        state.params.view_params.y_shift -= 0.01 / mz;
-        update_view_params_buffer(state);
+        if pressed.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
+            state.params.view_params.y_rot += 0.01;
+            update_view_params_buffer(state);
+        } else {
+            state.params.view_params.y_shift += 0.01 / mz;
+            update_view_params_buffer(state);
+        }
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyX)) {
         state.params.view_params.zoom -= 0.1 * mz;
         update_view_params_buffer(state);
