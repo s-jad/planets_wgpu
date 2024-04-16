@@ -1,8 +1,21 @@
 // CONSTANTS
+const PI: f32 = 3.14159265358979323846;
 const SCREEN_WIDTH: f32 = 1376.0;
 const SCREEN_HEIGHT: f32 = 768.0;
-const TEX_WIDTH: f32 = 1408.0;
-const TEX_HEIGHT: f32 = 800.0;
+const ASPECT: f32 = SCREEN_HEIGHT / SCREEN_WIDTH;
+const TEX_WIDTH: f32 = 2048.0;
+const TEX_HEIGHT: f32 = 2048.0;
+const TEX_DIM: vec2<f32> = vec2(TEX_WIDTH, TEX_HEIGHT);
+
+const m2: mat2x2<f32> = mat2x2(
+  0.80, 0.60,
+  -0.60, 0.80,
+);
+
+const m2Inv: mat2x2<f32> = mat2x2(
+  0.80, -0.60,
+  0.60, 0.80,
+);
 
 struct TimeUniform {
     time: f32,
@@ -15,6 +28,8 @@ struct RayParams {
 struct ViewParams {
   x_shift: f32,
   y_shift: f32,
+  x_rot: f32,
+  y_rot: f32,
   zoom: f32,
   time_modifier: f32,
 }
@@ -34,48 +49,12 @@ struct ViewParams {
 fn scale_aspect(fc: vec2<f32>) -> vec2<f32> {
   // Scale from screen dimensions to 0.0 --> 1.0
   var uv: vec2<f32> = ((2.0 * fc) / vec2(SCREEN_WIDTH, SCREEN_HEIGHT)) - 1.0;
-  uv.y = -uv.y;
+  uv.y = -uv.y * ASPECT;
   return uv;
 }
 
-// RAY MARCHING
-fn get_terrain(pos: vec3<f32>) -> f32 {
- let tex_uv: vec2<f32> = vec2(pos.x, pos.z) / vec2(TEX_WIDTH, TEX_HEIGHT);
- let tx = textureSample(terrain, terrain_sampler, tex_uv);
-
-  var d = pos.y + 1.0;
-  d += tx.x * 100.0; 
-  
-  return d;
-}
-
-fn map(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
-  var d = 0.0;
-
-  d += get_terrain(pos);
-  return d;
-}
-
-
-fn ray_march(ro: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>) -> f32 {
-  var dist = 0.0;
-  let steps = i32(rp.max_steps);
-
-  for (var i: i32 = 0; i < steps; i++) {
-    let p = ro + dist * rd;
-    let hit = map(p, uv);
-
-    if (abs(hit) < rp.epsilon) {
-      break;
-    }
-    dist += hit;
-
-    if (dist > rp.max_dist) {
-      break;
-    }
-  }
-
-  return dist;
+fn sphereSDF(pos: vec3<f32>, radius: f32) -> f32 {
+  return length(pos) - radius;
 }
 
 // LIGHTING
@@ -118,7 +97,7 @@ fn get_soft_shadow(pos: vec3<f32>, light_pos: vec3<f32>, uv: vec2<f32>) -> f32 {
 }
 
 fn get_light(pos: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
-  var light_pos: vec3<f32> = vec3(250.0, 100.0, -300.0) * 4.0;
+  var light_pos: vec3<f32> = vec3(250.0, 100.0, -300.0);
   let color: vec3<f32> = vec3(1.0);
 
   let l: vec3<f32> = normalize(light_pos - pos);
@@ -128,7 +107,7 @@ fn get_light(pos: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
   let r: vec3<f32> = reflect(-l, normal);
 
   let diff: f32 = 0.70 * max(dot(l, normal), 0.0);
-  let specular: f32 = 0.3 * pow(clamp(dot(r, v), 0.0, 1.0), 10.0);
+  let specular: f32 = 0.1 * pow(clamp(dot(r, v), 0.0, 1.0), 10.0);
   let ambient: f32 = 0.15; 
 
   let shadow: f32 = get_soft_shadow(pos, light_pos, uv);
@@ -146,11 +125,103 @@ fn get_cam(ro: vec3<f32>, look_at: vec3<f32>) -> mat3x3<f32> {
   return mat3x3(camr, camu, camf);
 }
 
+fn rotate3d(v: vec3<f32>, angleX: f32, angleY: f32) -> vec3<f32> {
+ let saX = sin(angleX);
+ let caX = cos(angleX);
+ let saY = sin(angleY);
+ let caY = cos(angleY);
+
+ // Rotation matrix for X-axis rotation
+ let mtxX = mat3x3<f32>(
+    1.0, 0.0, 0.0,
+    0.0, caX, -saX,
+    0.0, saX, caX
+ );
+
+ // Rotation matrix for Y-axis rotation
+ let mtxY = mat3x3<f32>(
+    caY, 0.0, saY,
+    0.0, 1.0, 0.0,
+    -saY, 0.0, caY
+ );
+
+ // Apply the rotations in sequence
+ let rotatedX = v * mtxX;
+ let rotatedY = rotatedX * mtxY;
+
+ return rotatedY;
+}
+
+struct TpMap {
+  xz: f32,
+  xy: f32,
+  yz: f32,
+}
+
+fn tex_triplanar_mapping(pos: vec3<f32>, uv: vec2<f32>) -> TpMap {
+  let amp = 30.0;
+
+  let tex_XZ: vec2<f32> = (pos.xz / TEX_DIM)*0.5 + 0.5;
+  let tex_XY: vec2<f32> = (pos.xy / TEX_DIM)*0.5 + 0.5;
+  let tex_YZ: vec2<f32> = (pos.yz / TEX_DIM)*0.5 + 0.5;
+
+  let XZ = textureSample(terrain, terrain_sampler, tex_XZ).x * amp;
+  let XY = textureSample(terrain, terrain_sampler, tex_XY).x * amp;
+  let YZ = textureSample(terrain, terrain_sampler, tex_YZ).x * amp;
+
+  return TpMap(XZ, XY, YZ);
+}
+
+// RAY MARCHING
+fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
+  var d = sphereSDF(pos, 50.0);
+  
+  return d;
+}
+
+fn map(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
+  var d = 0.0;
+
+  d += get_terrain(pos, uv);
+  return d;
+}
+
+
+fn ray_march(ro: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>) -> f32 {
+  var dist = 0.0;
+  let steps = i32(rp.max_steps);
+
+  for (var i: i32 = 0; i < steps; i++) {
+    let pos = ro + dist * rd;
+    var hit = map(pos, uv);
+
+    var n = get_normal(pos, uv);
+    n *= n*n*n*n*n*n*n;
+    n /= n.x + n.y + n.z;
+
+    let tx_map = tex_triplanar_mapping(pos, uv);
+    hit += tx_map.xz*n.y + tx_map.yz*n.x + tx_map.xy*n.z;
+
+    if (abs(hit) < rp.epsilon) {
+      break;
+    }
+    dist += hit;
+
+    if (dist > rp.max_dist) {
+      break;
+    }
+  }
+
+  return dist;
+}
+
 // RENDERING
 fn render(uv: vec2<f32>) -> vec3<f32> {
-  var ro: vec3<f32> = vec3(210.0, 180.0, 220.0);
-  let fov = 1.0;
-  let look_at: vec3<f32> = vec3(20.0, 1.0, 20.0);
+  var ro: vec3<f32> = vec3(0.0, 1.0, 110.0);
+  ro = rotate3d(ro, vp.y_rot, vp.x_rot);
+
+  let fov = radians(60.0);
+  let look_at: vec3<f32> = vec3(0.0, 0.0, 0.0);
   let rd: vec3<f32> = get_cam(ro, look_at) * normalize(vec3(uv * fov, 1.0));
 
   let dist: f32 = ray_march(ro, rd, uv);
@@ -161,7 +232,7 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
   if (dist < rp.max_dist) {
     col += get_light(pos, rd, uv);
   }
-  
+
   return col;
 }
 
