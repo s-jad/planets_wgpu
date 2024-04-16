@@ -76,6 +76,9 @@ pub(crate) struct TerrainParams {
 pub(crate) struct ViewParams {
     pub(crate) x_shift: f32,
     pub(crate) y_shift: f32,
+    pub(crate) x_rot: f32,
+    pub(crate) y_rot: f32,
     pub(crate) zoom: f32,
     pub(crate) time_modifier: f32,
+    pub(crate) fov_degrees: f32,
 }
