@@ -1,7 +1,7 @@
 use wgpu::util::DeviceExt;
 
 use crate::collections::{
-    consts::{SCREEN_HEIGHT, SCREEN_WIDTH, TERRAIN_TEX_BUF_SIZE},
+    consts::{SCREEN_HEIGHT, SCREEN_WIDTH, TERRAIN_TEX_BUF_SIZE, TEXTURE_HEIGHT, TEXTURE_WIDTH},
     structs::{
         BindGroups, Buffers, Params, Pipelines, RayParams, ShaderModules, TerrainParams, Textures,
         TimeUniform, ViewParams,
@@ -39,10 +39,10 @@ pub(crate) fn init_shader_modules(device: &wgpu::Device) -> ShaderModules {
 }
 
 pub(crate) fn init_params() -> Params {
-    let terrain_params = TerrainParams { octaves: 7 };
+    let terrain_params = TerrainParams { octaves: 23 };
 
     let ray_params = RayParams {
-        epsilon: 0.01,
+        epsilon: 0.001,
         max_steps: 600.0,
         max_dist: 1500.0,
     };
@@ -50,8 +50,11 @@ pub(crate) fn init_params() -> Params {
     let view_params = ViewParams {
         x_shift: 0.0,
         y_shift: 0.0,
+        x_rot: 0.0,
+        y_rot: 0.0,
         zoom: 1.0,
         time_modifier: 1.0,
+        fov_degrees: 60.0,
     };
 
     Params {
@@ -110,8 +113,11 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
             contents: bytemuck::cast_slice(&[
                 params.view_params.x_shift,
                 params.view_params.y_shift,
+                params.view_params.x_rot,
+                params.view_params.y_rot,
                 params.view_params.zoom,
                 params.view_params.time_modifier,
+                params.view_params.fov_degrees,
             ]),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         },
@@ -476,8 +482,8 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
     };
 
     let terrain_tex_extent = wgpu::Extent3d {
-        width: SCREEN_WIDTH,
-        height: SCREEN_HEIGHT,
+        width: TEXTURE_WIDTH,
+        height: TEXTURE_HEIGHT,
         depth_or_array_layers: 1,
     };
 
