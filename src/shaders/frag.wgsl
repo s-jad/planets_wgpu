@@ -165,9 +165,13 @@ struct TpMap {
 fn tex_triplanar_mapping(pos: vec3<f32>, uv: vec2<f32>) -> TpMap {
   let amp = 10.0;
 
-  var tex_XY = vec2(pos.x / r, pos.y / r) * 0.5 + 0.5;
-  var tex_XZ = vec2(pos.x / r, pos.z / r) * 0.5 + 0.5;
-  var tex_YZ = vec2(pos.y / r, pos.z / r) * 0.5 + 0.5;
+  // Convert world position to spherical coordinates
+  let l = length(pos);
+  
+  // Calculate tex coordinates for each of the 3 planes
+  var tex_XY = vec2(pos.x / l, pos.y / l) * 0.5 + 0.5;
+  var tex_XZ = vec2(pos.x / l, pos.z / l) * 0.5 + 0.5;
+  var tex_YZ = vec2(pos.y / l, pos.z / l) * 0.5 + 0.5;
   
   // Calc normal, exp to sharpen borders
   var n = abs(get_normal_rm(pos, uv));
