@@ -1,6 +1,6 @@
 use crate::{
     collections::{
-        consts::{DISPATCH_SIZE_X, DISPATCH_SIZE_Y},
+        consts::{TEX_DISPATCH_SIZE_X, TEX_DISPATCH_SIZE_Y},
         structs::{BindGroups, Buffers, Params, Pipelines},
         vertices::VERTICES,
     },
@@ -8,7 +8,9 @@ use crate::{
         init_bind_groups, init_buffers, init_params, init_pipelines, init_shader_modules,
         init_textures,
     },
-    updates::param_updates::{update_cpu_read_buffers, update_view_params_buffer},
+    updates::param_updates::{
+        update_cpu_read_buffers, update_debug_params_buffer, update_view_params_buffer,
+    },
 };
 use std::sync::Arc;
 
@@ -121,6 +123,7 @@ impl<'a> State<'a> {
 
     pub(crate) fn update(&mut self) {
         update_controls(self);
+        update_debug_params_buffer(self);
         update_view_params_buffer(self);
         update_cpu_read_buffers(self);
     }
@@ -198,7 +201,7 @@ impl<'a> State<'a> {
             compute_pass.set_bind_group(0, &self.bind_groups.uniform_bg, &[]);
             compute_pass.set_bind_group(1, &self.bind_groups.compute_bg, &[]);
             compute_pass.set_bind_group(2, &self.bind_groups.texture_bg, &[]);
-            compute_pass.dispatch_workgroups(DISPATCH_SIZE_X, DISPATCH_SIZE_Y, 1);
+            compute_pass.dispatch_workgroups(TEX_DISPATCH_SIZE_X, TEX_DISPATCH_SIZE_Y, 1);
             // Adjust workgroup size as needed
         }
 
