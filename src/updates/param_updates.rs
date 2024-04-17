@@ -1,9 +1,7 @@
-use crate::{collections::structs::ViewParams, state::app_state::State};
-
-pub(crate) fn update(state: &mut State) {
-    update_view_params_buffer(state);
-    update_cpu_read_buffers(state);
-}
+use crate::{
+    collections::structs::{DebugParams, ViewParams},
+    state::app_state::State,
+};
 
 pub(crate) fn update_view_params_buffer(state: &mut State) {
     let new_view_params = ViewParams {
@@ -20,6 +18,19 @@ pub(crate) fn update_view_params_buffer(state: &mut State) {
         &state.buffers.view_params,
         0,
         bytemuck::cast_slice(&[new_view_params]),
+    );
+}
+
+pub(crate) fn update_debug_params_buffer(state: &mut State) {
+    let new_debug_params = DebugParams {
+        pole_start: state.params.debug_params.pole_start,
+        pole_scale: state.params.debug_params.pole_scale,
+    };
+
+    state.queue.write_buffer(
+        &state.buffers.debug_params,
+        0,
+        bytemuck::cast_slice(&[new_debug_params]),
     );
 }
 
