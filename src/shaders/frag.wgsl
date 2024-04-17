@@ -1,5 +1,6 @@
 // CONSTANTS
 const PI: f32 = 3.14159265358979323846;
+const TAU: f32 = 2.0 * PI;
 const SCREEN_WIDTH: f32 = 1376.0;
 const SCREEN_HEIGHT: f32 = 768.0;
 const ASPECT: f32 = SCREEN_HEIGHT / SCREEN_WIDTH;
@@ -33,12 +34,17 @@ struct ViewParams {
   zoom: f32,
   time_modifier: f32,
 }
+struct DebugParams {
+  pole_start: f32,
+  pole_scale: f32,
+}
 
 // GROUPS AND BINDINGS
 @group(0) @binding(0) var<uniform> tu: TimeUniform;
 
 @group(1) @binding(0) var<storage, read_write> rp: RayParams;
 @group(1) @binding(1) var<storage, read_write> vp: ViewParams;
+@group(1) @binding(7) var<storage, read_write> dp: DebugParams;
 @group(1) @binding(8) var<storage, read_write> debug_arr: array<vec4<f32>>;
 @group(1) @binding(9) var<storage, read_write> debug: vec4<f32>;
 
@@ -97,7 +103,7 @@ fn get_soft_shadow(pos: vec3<f32>, light_pos: vec3<f32>, uv: vec2<f32>) -> f32 {
 }
 
 fn get_light(pos: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
-  var light_pos: vec3<f32> = vec3(250.0, 100.0, -300.0);
+  var light_pos: vec3<f32> = vec3(100.0, 100.0, -100.0);
   let color: vec3<f32> = vec3(1.0);
 
   let l: vec3<f32> = normalize(light_pos - pos);
@@ -145,7 +151,6 @@ fn rotate3d(v: vec3<f32>, angleX: f32, angleY: f32) -> vec3<f32> {
     -saY, 0.0, caY
  );
 
- // Apply the rotations in sequence
  let rotatedX = v * mtxX;
  let rotatedY = rotatedX * mtxY;
 
@@ -153,29 +158,53 @@ fn rotate3d(v: vec3<f32>, angleX: f32, angleY: f32) -> vec3<f32> {
 }
 
 struct TpMap {
-  xz: f32,
   xy: f32,
+  xz: f32,
   yz: f32,
 }
-
 fn tex_triplanar_mapping(pos: vec3<f32>, uv: vec2<f32>) -> TpMap {
-  let amp = 30.0;
+  let amp = 10.0;
 
-  let tex_XZ: vec2<f32> = (pos.xz / TEX_DIM)*0.5 + 0.5;
-  let tex_XY: vec2<f32> = (pos.xy / TEX_DIM)*0.5 + 0.5;
-  let tex_YZ: vec2<f32> = (pos.yz / TEX_DIM)*0.5 + 0.5;
+  var tex_XY = vec2(pos.x / r, pos.y / r) * 0.5 + 0.5;
+  var tex_XZ = vec2(pos.x / r, pos.z / r) * 0.5 + 0.5;
+  var tex_YZ = vec2(pos.y / r, pos.z / r) * 0.5 + 0.5;
+  
+  // Calc normal, exp to sharpen borders
+  var n = abs(get_normal_rm(pos, uv));
+  n *= n*n*n*n*n;
+  n /= n.x + n.y + n.z;
 
-  let XZ = textureSample(terrain, terrain_sampler, tex_XZ).x * amp;
-  let XY = textureSample(terrain, terrain_sampler, tex_XY).x * amp;
-  let YZ = textureSample(terrain, terrain_sampler, tex_YZ).x * amp;
+  // Sample the texture from each plane
+  let XY = textureSample(terrain, terrain_sampler, tex_XY).x * amp * n.z;
+  let XZ = textureSample(terrain, terrain_sampler, tex_XZ).x * amp * n.y;
+  let YZ = textureSample(terrain, terrain_sampler, tex_YZ).x * amp * n.x;
 
-  return TpMap(XZ, XY, YZ);
+  return TpMap(XY, XZ, YZ);
 }
 
 // RAY MARCHING
+fn get_normal_rm(pos: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
+  let e = vec2(rp.epsilon, 0.0);
+  let n = vec3(map_sphere(pos, uv)) - 
+    vec3(
+      map_sphere(pos - e.xyy, uv), 
+      map_sphere(pos - e.yxy, uv), 
+      map_sphere(pos - e.yyx, uv)
+    );
+
+  return normalize(n);
+}
+
+fn map_sphere(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
+  return sphereSDF(pos, 50.0);
+}
+
 fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
   var d = sphereSDF(pos, 50.0);
   
+  let tx_map = tex_triplanar_mapping(pos, uv);
+  d += tx_map.xz + tx_map.yz + tx_map.xy;
+
   return d;
 }
 
@@ -183,9 +212,9 @@ fn map(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
   var d = 0.0;
 
   d += get_terrain(pos, uv);
+
   return d;
 }
-
 
 fn ray_march(ro: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>) -> f32 {
   var dist = 0.0;
@@ -194,13 +223,6 @@ fn ray_march(ro: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>) -> f32 {
   for (var i: i32 = 0; i < steps; i++) {
     let pos = ro + dist * rd;
     var hit = map(pos, uv);
-
-    var n = get_normal(pos, uv);
-    n *= n*n*n*n*n*n*n;
-    n /= n.x + n.y + n.z;
-
-    let tx_map = tex_triplanar_mapping(pos, uv);
-    hit += tx_map.xz*n.y + tx_map.yz*n.x + tx_map.xy*n.z;
 
     if (abs(hit) < rp.epsilon) {
       break;
@@ -217,7 +239,7 @@ fn ray_march(ro: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>) -> f32 {
 
 // RENDERING
 fn render(uv: vec2<f32>) -> vec3<f32> {
-  var ro: vec3<f32> = vec3(0.0, 1.0, 110.0);
+  var ro: vec3<f32> = vec3(0.0, 1.0, -110.0);
   ro = rotate3d(ro, vp.y_rot, vp.x_rot);
 
   let fov = radians(60.0);
