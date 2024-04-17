@@ -10,6 +10,7 @@ pub(crate) struct Buffers {
     pub(crate) terrain_params: wgpu::Buffer,
     pub(crate) ray_params: wgpu::Buffer,
     pub(crate) view_params: wgpu::Buffer,
+    pub(crate) debug_params: wgpu::Buffer,
     pub(crate) generic_debug: wgpu::Buffer,
     pub(crate) cpu_read_generic_debug: wgpu::Buffer,
     pub(crate) generic_debug_array: wgpu::Buffer,
@@ -55,6 +56,7 @@ pub(crate) struct Params {
     pub(crate) terrain_params: TerrainParams,
     pub(crate) ray_params: RayParams,
     pub(crate) view_params: ViewParams,
+    pub(crate) debug_params: DebugParams,
 }
 
 #[repr(C)]
@@ -69,6 +71,13 @@ pub(crate) struct RayParams {
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct TerrainParams {
     pub(crate) octaves: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct DebugParams {
+    pub(crate) pole_start: f32,
+    pub(crate) pole_scale: f32,
 }
 
 #[repr(C)]
