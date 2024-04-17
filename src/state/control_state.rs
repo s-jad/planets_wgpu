@@ -99,7 +99,7 @@ pub(crate) fn print_gpu_data<T: bytemuck::Pod + std::fmt::Debug>(
 }
 
 pub(crate) fn update_controls(state: &mut State) {
-    if state.controls.key_pressed(PhysicalKey::Code(KeyCode::KeyP)) {
+    if state.controls.key_pressed(PhysicalKey::Code(KeyCode::KeyD)) {
         state.controls.set_mode(KeyboardMode::DEBUG);
     } else if state
         .controls
@@ -111,10 +111,7 @@ pub(crate) fn update_controls(state: &mut State) {
         .key_pressed(PhysicalKey::Code(KeyCode::Digit2))
     {
         state.controls.set_mode(KeyboardMode::VIEW);
-    } else if state
-        .controls
-        .key_pressed(PhysicalKey::Code(KeyCode::Digit3))
-    {
+    } else if state.controls.key_pressed(PhysicalKey::Code(KeyCode::KeyP)) {
         state.controls.set_mode(KeyboardMode::PRINT);
     }
 
@@ -128,6 +125,14 @@ pub(crate) fn update_controls(state: &mut State) {
 
 fn debug_controls(state: &mut State) {
     let pressed = state.controls.get_keys();
+
+    let mut dval_f = 0.0f32;
+
+    if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowUp)) {
+        dval_f = 1.0f32;
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowDown)) {
+        dval_f = -1.0f32;
+    }
 
     if pressed.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
         print_gpu_data::<[f32; 4]>(
@@ -145,6 +150,12 @@ fn debug_controls(state: &mut State) {
         );
         thread::sleep(time::Duration::from_millis(50));
         state.controls.set_mode(KeyboardMode::TERRAIN);
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyM)) {
+        let pole_start = &mut state.params.debug_params.pole_start;
+        *pole_start = f32::max(0.0, *pole_start + (0.05 * dval_f));
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyN)) {
+        let pole_scale = &mut state.params.debug_params.pole_scale;
+        *pole_scale = f32::max(0.0, *pole_scale + (0.05 * dval_f));
     }
 }
 
@@ -175,7 +186,7 @@ fn view_controls(state: &mut State) {
 
     if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowLeft)) {
         if pressed.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
-            state.params.view_params.x_rot = f32::max(0.0, state.params.view_params.x_rot - 0.01);
+            state.params.view_params.x_rot = f32::max(0.0, state.params.view_params.x_rot - 0.1);
             update_view_params_buffer(state);
         } else {
             state.params.view_params.x_shift -= 0.01 / mz;
@@ -183,7 +194,7 @@ fn view_controls(state: &mut State) {
         }
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowRight)) {
         if pressed.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
-            state.params.view_params.x_rot += 0.01;
+            state.params.view_params.x_rot += 0.1;
             update_view_params_buffer(state);
         } else {
             state.params.view_params.x_shift += 0.01 / mz;
@@ -191,7 +202,7 @@ fn view_controls(state: &mut State) {
         }
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowUp)) {
         if pressed.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
-            state.params.view_params.y_rot = f32::max(0.0, state.params.view_params.y_rot - 0.01);
+            state.params.view_params.y_rot = f32::max(0.0, state.params.view_params.y_rot - 0.1);
             update_view_params_buffer(state);
         } else {
             state.params.view_params.y_shift -= 0.01 / mz;
@@ -199,7 +210,7 @@ fn view_controls(state: &mut State) {
         }
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowDown)) {
         if pressed.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
-            state.params.view_params.y_rot += 0.01;
+            state.params.view_params.y_rot += 0.1;
             update_view_params_buffer(state);
         } else {
             state.params.view_params.y_shift += 0.01 / mz;
@@ -214,23 +225,18 @@ fn view_controls(state: &mut State) {
     }
 }
 
-fn print_controls(state: &State) {
-    let pressed = state.controls.get_keys();
-
+fn print_controls(state: &mut State) {
     // PRINT CURRENT FRAME --------------------------------------------------------
     //if pressed.contains(&PhysicalKey::Code(KeyCode::Space)) {
     //    capture_frame_and_save(&state.device, &state.queue, &state.surface);
     //}
 
     // PRINT CURRENT PARAMETER VALUES ----------------------------------------------
-    if pressed.contains(&PhysicalKey::Code(KeyCode::KeyT)) {
-        println!("\nterrain_params:\n{:#?}", state.params.terrain_params);
-        thread::sleep(time::Duration::from_millis(50));
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyV)) {
-        println!("\nterrain_params:\n{:#?}", state.params.view_params);
-        thread::sleep(time::Duration::from_millis(50));
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyR)) {
-        println!("\nterrain_params:\n{:#?}", state.params.ray_params);
-        thread::sleep(time::Duration::from_millis(50));
-    }
+    println!("\n------------------------------------------------------");
+    println!("\n{:#?}", state.params.terrain_params);
+    println!("\n{:#?}", state.params.view_params);
+    println!("\n{:#?}", state.params.ray_params);
+    println!("\n{:#?}", state.params.debug_params);
+    println!("------------------------------------------------------\n");
+    state.controls.mode = KeyboardMode::VIEW;
 }
