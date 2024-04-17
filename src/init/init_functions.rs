@@ -3,8 +3,8 @@ use wgpu::util::DeviceExt;
 use crate::collections::{
     consts::{SCREEN_HEIGHT, SCREEN_WIDTH, TERRAIN_TEX_BUF_SIZE, TEXTURE_HEIGHT, TEXTURE_WIDTH},
     structs::{
-        BindGroups, Buffers, Params, Pipelines, RayParams, ShaderModules, TerrainParams, Textures,
-        TimeUniform, ViewParams,
+        BindGroups, Buffers, DebugParams, Params, Pipelines, RayParams, ShaderModules,
+        TerrainParams, Textures, TimeUniform, ViewParams,
     },
     vertices::{vertices_as_bytes, VERTICES},
 };
@@ -39,12 +39,17 @@ pub(crate) fn init_shader_modules(device: &wgpu::Device) -> ShaderModules {
 }
 
 pub(crate) fn init_params() -> Params {
-    let terrain_params = TerrainParams { octaves: 23 };
+    let terrain_params = TerrainParams { octaves: 21 };
 
     let ray_params = RayParams {
-        epsilon: 0.001,
+        epsilon: 0.01,
         max_steps: 600.0,
         max_dist: 1500.0,
+    };
+
+    let debug_params = DebugParams {
+        pole_start: 0.01,
+        pole_scale: 1.0,
     };
 
     let view_params = ViewParams {
@@ -61,6 +66,7 @@ pub(crate) fn init_params() -> Params {
         terrain_params,
         ray_params,
         view_params,
+        debug_params,
     }
 }
 
@@ -123,6 +129,17 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
         },
     );
 
+    let debug_params = wgpu::util::DeviceExt::create_buffer_init(
+        device,
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("Ray Marching Parameters Storage Buffer"),
+            contents: bytemuck::cast_slice(&[
+                params.debug_params.pole_start,
+                params.debug_params.pole_scale,
+            ]),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        },
+    );
     // STORAGE/CPU-READABLE BUFFER PAIRS
     let generic_debug = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Debug Shaders Buffer"),
@@ -162,6 +179,7 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
         terrain_params,
         ray_params,
         view_params,
+        debug_params,
         generic_debug,
         cpu_read_generic_debug,
         generic_debug_array,
@@ -197,53 +215,72 @@ pub(crate) fn init_bind_groups(
         label: Some("uniforms_bind_group"),
     });
 
-    let frag_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: false },
-                    has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<RayParams>() as _),
+    let frag_bgl =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<RayParams>() as _
+                        ),
+                    },
+                    count: None,
                 },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: false },
-                    has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<ViewParams>() as _),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<ViewParams>() as _
+                        ),
+                    },
+                    count: None,
                 },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 8,
-                visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: false },
-                    has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(
-                        std::mem::size_of::<[[f32; 4]; 512]>() as _
-                    ),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<DebugParams>() as _
+                        ),
+                    },
+                    count: None,
                 },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 9,
-                visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: false },
-                    has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<[f32; 4]>() as _),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 8,
+                    visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<[[f32; 4]; 512]>() as _,
+                        ),
+                    },
+                    count: None,
                 },
-                count: None,
-            },
-        ],
-        label: Some("fragment_bind_group_layout"),
-    });
+                wgpu::BindGroupLayoutEntry {
+                    binding: 9,
+                    visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<[f32; 4]>() as _
+                        ),
+                    },
+                    count: None,
+                },
+            ],
+            label: Some("fragment_bind_group_layout"),
+        });
 
     let frag_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: &frag_bgl,
@@ -255,6 +292,10 @@ pub(crate) fn init_bind_groups(
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: buffers.view_params.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 7,
+                resource: buffers.debug_params.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 8,
