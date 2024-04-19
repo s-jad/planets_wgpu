@@ -1,15 +1,25 @@
 const PI: f32 = 3.14159265358979323846;
 const TAU: f32 = 2.0 * PI;
+const MAX_F32: f32 = 0x1.fffffep+127f;
+
 const SCREEN_WIDTH: f32 = 1376.0;
 const SCREEN_HEIGHT: f32 = 768.0;
 const ASPECT: f32 = SCREEN_HEIGHT / SCREEN_WIDTH;
+
 const TEX_WIDTH: f32 = 2048.0;
 const TEX_HEIGHT: f32 = 2048.0;
 const TEX_DIM: vec2<f32> = vec2(TEX_WIDTH, TEX_HEIGHT);
-const MAX_F32: f32 = 0x1.fffffep+127f;
+
 const CENTER: vec3<f32> = vec3(0.0);
 const PLANET_ROTATION: f32 = 0.1;
-const WATER_LEVEL: f32 = 50.1;
+
+const WATER_LEVEL: f32 = 50.3;
+const SAND_LEVEL: f32 = WATER_LEVEL + 0.03 ;
+const VEGETATION_LEVEL: f32 = WATER_LEVEL + 2.0;
+
+const SAND_CLR: vec3<f32> = vec3(0.8, 0.8, 0.1);
+const VEGETATION_CLR: vec3<f32> = vec3(0.02, 0.9, 0.0);
+const ROCK_CLR: vec3<f32> = vec3(0.3, 0.2, 0.1);
 
 const m2: mat2x2<f32> = mat2x2(
   0.80, 0.60,
@@ -69,8 +79,12 @@ fn sphereSDF(pos: vec3<f32>, radius: f32) -> f32 {
 // LIGHTING
 fn get_normal(pos: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
   let e = vec2(rp.epsilon, 0.0);
-  let n = vec3(map(pos, uv)) - vec3(map(pos - e.xyy, uv), map(pos - e.yxy, uv), map(pos -
-  e.yyx, uv));
+  let n = vec3(map(pos, uv).dist) - 
+  vec3(
+    map(pos - e.xyy, uv).dist,
+    map(pos - e.yxy, uv).dist,
+    map(pos - e.yyx, uv).dist
+  );
 
   return normalize(n);
 }
@@ -81,7 +95,7 @@ fn get_ambient_occlusion(pos: vec3<f32>, normal: vec3<f32>, uv: vec2<f32>) -> f3
 
   for (var i: i32 = 0; i < 8; i++) {
     let len = 0.01 + 0.02 * f32(i * i);
-    let dist = map(pos + normal * len, uv);
+    let dist = map(pos + normal * len, uv).dist;
     occ += (len - dist) * weight;
     weight *= 0.85;
   }
@@ -95,7 +109,7 @@ fn get_soft_shadow(pos: vec3<f32>, light_pos: vec3<f32>, uv: vec2<f32>) -> f32 {
   let light_size = 0.1;
 
   for (var i: i32 = 0; i < 8; i++) {
-    let hit = map(pos + light_pos * dist, uv);
+    let hit = map(pos + light_pos * dist, uv).dist;
     res = min(res, hit / (dist * light_size));
     if (hit < rp.epsilon) { break; }
     dist += hit;
@@ -162,7 +176,7 @@ fn rotate3d(v: vec3<f32>, angleX: f32, angleY: f32) -> vec3<f32> {
 
 // TERRAIN/TEXTURE MAPPING
 fn tex_triplanar_mapping(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
-  let amp = 5.0;
+  let amp = 10.0;
   let l = length(pos);
   
   // Calculate tex coordinates for each of the 3 planes
@@ -187,22 +201,33 @@ fn map_sphere(pos: vec3<f32>, uv: vec2<f32>, radius: f32) -> f32 {
   return sphereSDF(pos, radius);
 }
 
-fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
+struct Terrain {
+  dist: f32,
+  water_depth: f32,
+}
+
+fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> Terrain {
   let radius = 50.0;
   let rPos = rotate3d(pos, 0.0, PLANET_ROTATION*tu.time);
   var d1 = sphereSDF(rPos, radius);
-
-  d1 += tex_triplanar_mapping(rPos, uv);
+  var d0 = sphereSDF(rPos, radius);
   
-  return d1;
+  d1 += tex_triplanar_mapping(rPos, uv);
+
+  let water_depth = max(0.0, d1 - d0);
+
+  d1 = min(d0, d1);
+
+  return Terrain(d1, water_depth);
 }
 
-fn map(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
+fn map(pos: vec3<f32>, uv: vec2<f32>) -> Terrain {
   var d = 0.0;
   
-  d += get_terrain(pos, uv);
+  let t = get_terrain(pos, uv);
+  d += t.dist;
 
-  return d;
+  return Terrain(d, t.water_depth);
 }
 
 // RAY MARCHING
@@ -219,39 +244,17 @@ fn get_normal_rm(pos: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
   return normalize(n);
 }
 
-// fn ray_sphere_intersection(
-//   center: vec3<f32>,
-//   radius: f32,
-//   ro: vec3<f32>,
-//   rd: vec3<f32>
-// ) -> vec2<f32> {
-//   let offset = ro - center;
-//   let a = 1.0;
-//   let b = 2.0 * dot(offset, rd);
-//   let c = dot(offset, offset) - radius*radius;
-// 
-//   let discriminant = b*b - 4.0*a*c;
-// 
-//   if discriminant > 0.0 {
-//     let s = sqrt(discriminant);
-//     let near_dst = max(0.0, (-b - s) / (2.0 * a));
-//     let far_dst = (-b + s) / (2.0 * a);
-// 
-//     if far_dst >= 0.0 {
-//       return vec2(near_dst, far_dst - near_dst);
-//     }
-//   }
-// 
-//   return vec2(MAX_F32, 0.0);
-// }
-
-fn ray_march(ro: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>) -> f32 {
-  var dist = 0.0;
+fn ray_march(ro: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>) -> Terrain {
   let steps = i32(rp.max_steps);
+
+  var dist = 0.0;
+  var water_depth = 0.0;
 
   for (var i: i32 = 0; i < steps; i++) {
     let pos = ro + dist * rd;
-    var hit = map(pos, uv);
+    let t = map(pos, uv);
+    let hit = t.dist;
+    water_depth = t.water_depth; 
 
     if (abs(hit) < rp.epsilon) {
       break;
@@ -263,7 +266,7 @@ fn ray_march(ro: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>) -> f32 {
     }
   }
 
-  return dist;
+  return Terrain(dist, water_depth);
 }
 
 // RENDERING
@@ -275,7 +278,10 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
   let look_at: vec3<f32> = vec3(0.0, 0.0, 0.0);
   let rd: vec3<f32> = get_cam(ro, look_at) * normalize(vec3(uv * fov, 1.0));
 
-  let dist: f32 = ray_march(ro, rd, uv);
+  let terrain = ray_march(ro, rd, uv);
+  let dist: f32 = terrain.dist;
+  let wd = terrain.water_depth;
+
   let pos = ro + dist * rd;
 
   var col: vec3<f32> = vec3(0.0);
@@ -285,14 +291,17 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
     let dist_origin = length(pos);
 
     if dist_origin < WATER_LEVEL {
-      let rg = 0.3 - (50.0 - dist_origin)*0.9;
-      col = vec3(rg, rg, 1.0);
-      col += get_light(pos, rd, uv)*0.01;
-    } if dist_origin > WATER_LEVEL && dist_origin <= WATER_LEVEL + 0.05 {
-      col += get_light(pos, rd, uv)*vec3(0.8, 0.8, 0.0);
-    }
-    else {
-      col += get_light(pos, rd, uv)*vec3(0.0, 1.0, 0.0);
+      let rg = max(0.0, (1.0 - wd)*0.1);
+      let b = 1.0 - 0.15*wd;
+      col += get_light(pos, rd, uv)*vec3(rg, rg, b);
+    
+      debug_arr[u32(uv.x * SCREEN_WIDTH)] = vec4(col, wd);
+    } else if dist_origin < SAND_LEVEL {
+      col += get_light(pos, rd, uv)*SAND_CLR;
+    } else if dist_origin < VEGETATION_LEVEL {
+      col += get_light(pos, rd, uv)*VEGETATION_CLR;
+    } else {
+      col += get_light(pos, rd, uv)*ROCK_CLR;
     }
   }
   
