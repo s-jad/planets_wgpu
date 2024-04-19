@@ -1,4 +1,3 @@
-// CONSTANTS
 const PI: f32 = 3.14159265358979323846;
 const TAU: f32 = 2.0 * PI;
 const SCREEN_WIDTH: f32 = 1376.0;
@@ -7,6 +6,10 @@ const ASPECT: f32 = SCREEN_HEIGHT / SCREEN_WIDTH;
 const TEX_WIDTH: f32 = 2048.0;
 const TEX_HEIGHT: f32 = 2048.0;
 const TEX_DIM: vec2<f32> = vec2(TEX_WIDTH, TEX_HEIGHT);
+const MAX_F32: f32 = 0x1.fffffep+127f;
+const CENTER: vec3<f32> = vec3(0.0);
+const PLANET_ROTATION: f32 = 0.1;
+const WATER_LEVEL: f32 = 50.1;
 
 const m2: mat2x2<f32> = mat2x2(
   0.80, 0.60,
@@ -157,68 +160,90 @@ fn rotate3d(v: vec3<f32>, angleX: f32, angleY: f32) -> vec3<f32> {
  return rotatedY;
 }
 
-struct TpMap {
-  xy: f32,
-  xz: f32,
-  yz: f32,
-}
-fn tex_triplanar_mapping(pos: vec3<f32>, uv: vec2<f32>) -> TpMap {
-  let amp = 10.0;
-
-  // Convert world position to spherical coordinates
+// TERRAIN/TEXTURE MAPPING
+fn tex_triplanar_mapping(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
+  let amp = 5.0;
   let l = length(pos);
   
   // Calculate tex coordinates for each of the 3 planes
-  var tex_XY = vec2(pos.x / l, pos.y / l) * 0.5 + 0.5;
-  var tex_XZ = vec2(pos.x / l, pos.z / l) * 0.5 + 0.5;
-  var tex_YZ = vec2(pos.y / l, pos.z / l) * 0.5 + 0.5;
+  // Shift slightly to avoid symmetries
+  var tex_XY = vec2(pos.x / l, pos.y / l) * 0.5 + 0.49;
+  var tex_XZ = vec2(pos.x / l, pos.z / l) * 0.5 + 0.51;
+  var tex_YZ = vec2(pos.y / l, pos.z / l) * 0.5 + 0.53;
   
-  // Calc normal, exp to sharpen borders
+  // Calc normal, exp to sharpen borders between planes
   var n = abs(get_normal_rm(pos, uv));
   n *= n*n*n*n*n;
   n /= n.x + n.y + n.z;
 
-  // Sample the texture from each plane
   let XY = textureSample(terrain, terrain_sampler, tex_XY).x * amp * n.z;
   let XZ = textureSample(terrain, terrain_sampler, tex_XZ).x * amp * n.y;
   let YZ = textureSample(terrain, terrain_sampler, tex_YZ).x * amp * n.x;
 
-  return TpMap(XY, XZ, YZ);
+  return XY + XZ + YZ;
+}
+
+fn map_sphere(pos: vec3<f32>, uv: vec2<f32>, radius: f32) -> f32 {
+  return sphereSDF(pos, radius);
+}
+
+fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
+  let radius = 50.0;
+  let rPos = rotate3d(pos, 0.0, PLANET_ROTATION*tu.time);
+  var d1 = sphereSDF(rPos, radius);
+
+  d1 += tex_triplanar_mapping(rPos, uv);
+  
+  return d1;
+}
+
+fn map(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
+  var d = 0.0;
+  
+  d += get_terrain(pos, uv);
+
+  return d;
 }
 
 // RAY MARCHING
 fn get_normal_rm(pos: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
   let e = vec2(rp.epsilon, 0.0);
-  let n = vec3(map_sphere(pos, uv)) - 
+  let r = 50.0;
+  let n = vec3(map_sphere(pos, uv, r)) - 
     vec3(
-      map_sphere(pos - e.xyy, uv), 
-      map_sphere(pos - e.yxy, uv), 
-      map_sphere(pos - e.yyx, uv)
+      map_sphere(pos - e.xyy, uv, r), 
+      map_sphere(pos - e.yxy, uv, r), 
+      map_sphere(pos - e.yyx, uv, r)
     );
 
   return normalize(n);
 }
 
-fn map_sphere(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
-  return sphereSDF(pos, 50.0);
-}
-
-fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
-  var d = sphereSDF(pos, 50.0);
-  
-  let tx_map = tex_triplanar_mapping(pos, uv);
-  d += tx_map.xz + tx_map.yz + tx_map.xy;
-
-  return d;
-}
-
-fn map(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
-  var d = 0.0;
-
-  d += get_terrain(pos, uv);
-
-  return d;
-}
+// fn ray_sphere_intersection(
+//   center: vec3<f32>,
+//   radius: f32,
+//   ro: vec3<f32>,
+//   rd: vec3<f32>
+// ) -> vec2<f32> {
+//   let offset = ro - center;
+//   let a = 1.0;
+//   let b = 2.0 * dot(offset, rd);
+//   let c = dot(offset, offset) - radius*radius;
+// 
+//   let discriminant = b*b - 4.0*a*c;
+// 
+//   if discriminant > 0.0 {
+//     let s = sqrt(discriminant);
+//     let near_dst = max(0.0, (-b - s) / (2.0 * a));
+//     let far_dst = (-b + s) / (2.0 * a);
+// 
+//     if far_dst >= 0.0 {
+//       return vec2(near_dst, far_dst - near_dst);
+//     }
+//   }
+// 
+//   return vec2(MAX_F32, 0.0);
+// }
 
 fn ray_march(ro: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>) -> f32 {
   var dist = 0.0;
@@ -256,9 +281,21 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
   var col: vec3<f32> = vec3(0.0);
 
   if (dist < rp.max_dist) {
-    col += get_light(pos, rd, uv);
-  }
+    // Calculate the distance from the camera's position to the point
+    let dist_origin = length(pos);
 
+    if dist_origin < WATER_LEVEL {
+      let rg = 0.3 - (50.0 - dist_origin)*0.9;
+      col = vec3(rg, rg, 1.0);
+      col += get_light(pos, rd, uv)*0.01;
+    } if dist_origin > WATER_LEVEL && dist_origin <= WATER_LEVEL + 0.05 {
+      col += get_light(pos, rd, uv)*vec3(0.8, 0.8, 0.0);
+    }
+    else {
+      col += get_light(pos, rd, uv)*vec3(0.0, 1.0, 0.0);
+    }
+  }
+  
   return col;
 }
 
