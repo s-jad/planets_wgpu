@@ -186,7 +186,7 @@ fn view_controls(state: &mut State) {
 
     if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowLeft)) {
         if pressed.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
-            state.params.view_params.x_rot = f32::max(0.0, state.params.view_params.x_rot - 0.1);
+            state.params.view_params.x_rot = f32::max(0.0, state.params.view_params.x_rot + 0.1);
             update_view_params_buffer(state);
         } else {
             state.params.view_params.x_shift -= 0.01 / mz;
@@ -194,7 +194,7 @@ fn view_controls(state: &mut State) {
         }
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowRight)) {
         if pressed.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
-            state.params.view_params.x_rot += 0.1;
+            state.params.view_params.x_rot -= 0.1;
             update_view_params_buffer(state);
         } else {
             state.params.view_params.x_shift += 0.01 / mz;
@@ -202,7 +202,7 @@ fn view_controls(state: &mut State) {
         }
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowUp)) {
         if pressed.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
-            state.params.view_params.y_rot = f32::max(0.0, state.params.view_params.y_rot - 0.1);
+            state.params.view_params.y_rot = f32::max(0.0, state.params.view_params.y_rot + 0.1);
             update_view_params_buffer(state);
         } else {
             state.params.view_params.y_shift -= 0.01 / mz;
@@ -210,7 +210,7 @@ fn view_controls(state: &mut State) {
         }
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowDown)) {
         if pressed.contains(&PhysicalKey::Code(KeyCode::ShiftLeft)) {
-            state.params.view_params.y_rot += 0.1;
+            state.params.view_params.y_rot -= 0.1;
             update_view_params_buffer(state);
         } else {
             state.params.view_params.y_shift += 0.01 / mz;
