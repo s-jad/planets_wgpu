@@ -23,6 +23,7 @@ const m2Inv: mat2x2<f32> = mat2x2(
 @group(1) @binding(9) var<storage, read_write> debug: vec4<f32>;
 
 @group(2) @binding(0) var terrain: texture_storage_2d<rgba32float, read_write>;
+@group(2) @binding(1) var waves: texture_storage_2d<rgba32float, read_write>;
 
 struct TimeUniform {
 time: f32,
@@ -32,7 +33,8 @@ struct TerrainParams {
 }
 
 // FBM
-// MIT License. © Stefan Gustavson, Munrocket -------------------------------------------
+
+// perlinNoise2 - MIT License. © Stefan Gustavson, Munrocket ------------------------------
 fn permute4(x: vec4f) -> vec4f { return ((x * 34. + 1.) * x) % vec4f(289.); }
 fn fade2(t: vec2f) -> vec2f { return t * t * t * (t * (t * 6. - 15.) + 10.); }
 
@@ -96,6 +98,18 @@ fn fbm(pos: vec2<f32>) -> f32 {
   return res;
 }
 
+fn generate_waves(pos: vec2<f32>, terrain_height: f32) -> f32 {
+  let height = 0.1;
+  let freq = 10.0;
+  let speed = 1.0;
+  let amp = 1.0;
+  
+  let wx = sin(terrain_height*height*freq + pos.x*speed)*amp;
+  let wy = sin(terrain_height*height*freq + pos.y*speed)*amp;
+  
+  return wx*wy;
+}
+
 @compute 
 @workgroup_size(32, 32, 1) 
 fn generate_terrain_map(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -104,7 +118,9 @@ fn generate_terrain_map(@builtin(global_invocation_id) id: vec3<u32>) {
   TEX_HEIGHT)) - 1.0;
 
   var tx = textureLoad(terrain, tx_coord);
-  tx += fbm(tx_uv);
-  
+  let noise = fbm(tx_uv);
+  tx.x += noise;
+  tx.y += generate_waves(tx_uv, noise);
+  debug_arr[id.x] = tx; 
   textureStore(terrain, tx_coord, tx);
 }
