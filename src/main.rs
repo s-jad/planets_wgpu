@@ -13,6 +13,9 @@ use winit::{
 };
 
 fn main() {
+    // export RUST_LOG=debug (loads of info)
+    // export RUST_LOG=error (only critical info)
+    env_logger::init();
     let event_loop = EventLoop::new().expect("event loop should init");
     event_loop.set_control_flow(ControlFlow::Poll);
 
