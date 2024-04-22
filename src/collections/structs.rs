@@ -1,12 +1,23 @@
+use nalgebra::Matrix4;
+
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub(crate) struct TimeUniform {
     pub(crate) time: f32,
 }
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct PerspectiveUniform {
+    pub(crate) adjoint: Matrix4<f32>,
+    pub(crate) inverse: Matrix4<f32>,
+}
+
 #[derive(Debug)]
 pub(crate) struct Buffers {
     pub(crate) vertex: wgpu::Buffer,
     pub(crate) time_uniform: wgpu::Buffer,
+    pub(crate) perspective_uniform: wgpu::Buffer,
     pub(crate) terrain_params: wgpu::Buffer,
     pub(crate) ray_params: wgpu::Buffer,
     pub(crate) view_params: wgpu::Buffer,
@@ -48,6 +59,8 @@ pub(crate) struct Pipelines {
 pub(crate) struct Textures {
     pub(crate) terrain_sampler: wgpu::Sampler,
     pub(crate) terrain_view: wgpu::TextureView,
+    pub(crate) wave_sampler: wgpu::Sampler,
+    pub(crate) wave_view: wgpu::TextureView,
 }
 
 // PARAMETERS
@@ -56,6 +69,7 @@ pub(crate) struct Params {
     pub(crate) terrain_params: TerrainParams,
     pub(crate) ray_params: RayParams,
     pub(crate) view_params: ViewParams,
+    pub(crate) perspective_uniform: PerspectiveUniform,
     pub(crate) debug_params: DebugParams,
 }
 
