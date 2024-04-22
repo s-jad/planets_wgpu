@@ -88,7 +88,7 @@ pub(crate) fn print_gpu_data<T: bytemuck::Pod + std::fmt::Debug>(
 
             // Print the boids current properties
             for (i, obj) in data.iter().enumerate() {
-                println!("{} {}:\n{:?}", obj_label, i, obj);
+                println!("{} {}:\n{:#?}", obj_label, i, obj);
             }
 
             drop(buf_view);
