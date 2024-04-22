@@ -1,13 +1,18 @@
 use wgpu::util::DeviceExt;
 
 use crate::collections::{
-    consts::{SCREEN_HEIGHT, SCREEN_WIDTH, TERRAIN_TEX_BUF_SIZE, TEXTURE_HEIGHT, TEXTURE_WIDTH},
+    consts::{
+        SCREEN_HEIGHT, SCREEN_WIDTH, TERRAIN_TEX_BUF_SIZE, TEXTURE_HEIGHT, TEXTURE_WIDTH,
+        WAVE_TEX_BUF_SIZE,
+    },
     structs::{
-        BindGroups, Buffers, DebugParams, Params, Pipelines, RayParams, ShaderModules,
-        TerrainParams, Textures, TimeUniform, ViewParams,
+        BindGroups, Buffers, DebugParams, Params, PerspectiveUniform, Pipelines, RayParams,
+        ShaderModules, TerrainParams, Textures, TimeUniform, ViewParams,
     },
     vertices::{vertices_as_bytes, VERTICES},
 };
+
+use super::projection::get_perspective_projection;
 
 pub(crate) fn init_shader_modules(device: &wgpu::Device) -> ShaderModules {
     let vdesc = wgpu::ShaderModuleDescriptor {
@@ -42,9 +47,9 @@ pub(crate) fn init_params() -> Params {
     let terrain_params = TerrainParams { octaves: 21 };
 
     let ray_params = RayParams {
-        epsilon: 0.01,
-        max_steps: 600.0,
-        max_dist: 1500.0,
+        epsilon: 0.03,
+        max_steps: 900.0,
+        max_dist: 1200.0,
     };
 
     let debug_params = DebugParams {
@@ -54,18 +59,22 @@ pub(crate) fn init_params() -> Params {
 
     let view_params = ViewParams {
         x_shift: 0.0,
+        // TEMPORARY - fix issue with projection matrix
         y_shift: 0.0,
         x_rot: 0.0,
         y_rot: 0.0,
         zoom: 1.0,
         time_modifier: 1.0,
-        fov_degrees: 60.0,
+        fov_degrees: 90.0,
     };
+
+    let perspective_uniform = get_perspective_projection();
 
     Params {
         terrain_params,
         ray_params,
         view_params,
+        perspective_uniform,
         debug_params,
     }
 }
@@ -85,6 +94,13 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
     let time_uniform = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Time Uniform Buffer"),
         size: std::mem::size_of::<f32>() as wgpu::BufferAddress,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let perspective_uniform = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Perspective Projection Matrix Uniform Buffer"),
+        size: std::mem::size_of::<PerspectiveUniform>() as wgpu::BufferAddress,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -176,6 +192,7 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
     Buffers {
         vertex,
         time_uniform,
+        perspective_uniform,
         terrain_params,
         ray_params,
         view_params,
@@ -192,26 +209,49 @@ pub(crate) fn init_bind_groups(
     buffers: &Buffers,
     textures: &Textures,
 ) -> BindGroups {
-    let uniform_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<TimeUniform>() as _),
-            },
-            count: None,
-        }],
-        label: Some("uniform_bind_group_layout"),
-    });
+    let uniform_bgl =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<TimeUniform>() as _
+                        ),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<
+                            PerspectiveUniform,
+                        >() as _),
+                    },
+                    count: None,
+                },
+            ],
+            label: Some("uniform_bind_group_layout"),
+        });
 
     let uniform_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: &uniform_bgl,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: buffers.time_uniform.as_entire_binding(),
-        }],
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffers.time_uniform.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: buffers.perspective_uniform.as_entire_binding(),
+            },
+        ],
         label: Some("uniforms_bind_group"),
     });
 
@@ -369,25 +409,43 @@ pub(crate) fn init_bind_groups(
     });
 
     let texture_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::StorageTexture {
-                access: wgpu::StorageTextureAccess::ReadWrite,
-                format: wgpu::TextureFormat::Rgba32Float,
-                view_dimension: wgpu::TextureViewDimension::D2,
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::StorageTexture {
+                    access: wgpu::StorageTextureAccess::ReadWrite,
+                    format: wgpu::TextureFormat::Rgba32Float,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                },
+                count: None,
             },
-            count: None,
-        }],
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::StorageTexture {
+                    access: wgpu::StorageTextureAccess::ReadWrite,
+                    format: wgpu::TextureFormat::Rgba32Float,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                },
+                count: None,
+            },
+        ],
         label: Some("texture_bgl"),
     });
 
     let texture_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: &texture_bgl,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::TextureView(&textures.terrain_view),
-        }],
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&textures.terrain_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&textures.terrain_view),
+            },
+        ],
         label: Some("texture_bg"),
     });
 
@@ -409,6 +467,22 @@ pub(crate) fn init_bind_groups(
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
         ],
         label: Some("sampled_texture_bgl"),
     });
@@ -423,6 +497,14 @@ pub(crate) fn init_bind_groups(
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: wgpu::BindingResource::Sampler(&textures.terrain_sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(&textures.wave_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::Sampler(&textures.wave_sampler),
             },
         ],
         label: Some("sampled_texture_bg"),
@@ -556,8 +638,55 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
         ..Default::default()
     });
 
+    let wave_view_desc = wgpu::TextureViewDescriptor {
+        label: Some("Waves - View Descriptor"),
+        format: Some(wgpu::TextureFormat::Rgba32Float),
+        dimension: Some(wgpu::TextureViewDimension::D2),
+        aspect: wgpu::TextureAspect::All,
+        base_mip_level: 0,
+        mip_level_count: Some(1),
+        base_array_layer: 0,
+        array_layer_count: None,
+    };
+
+    let wave_tex_extent = wgpu::Extent3d {
+        width: TEXTURE_WIDTH,
+        height: TEXTURE_HEIGHT,
+        depth_or_array_layers: 1,
+    };
+
+    let wave_tex = device.create_texture_with_data(
+        queue,
+        &wgpu::TextureDescriptor {
+            label: Some("Waves - Read-Write Storage Texture"),
+            size: wave_tex_extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba32Float,
+            usage: wgpu::TextureUsages::STORAGE_BINDING
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[wgpu::TextureFormat::Rgba32Float],
+        },
+        wgpu::util::TextureDataOrder::default(),
+        &[0; WAVE_TEX_BUF_SIZE],
+    );
+
+    let wave_view = wave_tex.create_view(&wave_view_desc);
+
+    let wave_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("Waves - Sampler"),
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::FilterMode::Linear,
+        ..Default::default()
+    });
+
     Textures {
         terrain_sampler,
         terrain_view,
+        wave_sampler,
+        wave_view,
     }
 }
