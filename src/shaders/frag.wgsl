@@ -7,7 +7,7 @@ const SCREEN_HEIGHT: f32 = 768.0;
 const ASPECT: f32 = SCREEN_WIDTH / SCREEN_HEIGHT;
 const INV_ASPECT: f32 = SCREEN_HEIGHT / SCREEN_WIDTH;
 // Used extremely low FOV to reduce edge distortion of moon sdf
-// Combined with placing the camera extremely far from the objects (1000.0 on z-axis)
+// Combined with placing the camera extremely far from the objects (800.0 on z-axis)
 const FOV: f32 = 0.1708; // 9.78611914 degrees
 
 const TEX_WIDTH: f32 = 2048.0;
@@ -73,8 +73,8 @@ struct ViewParams {
 
 @group(2) @binding(0) var terrain: texture_2d<f32>;
 @group(2) @binding(1) var terrain_sampler: sampler;
-@group(2) @binding(2) var waves: texture_2d<f32>;
-@group(2) @binding(3) var wave_sampler: sampler;
+@group(2) @binding(2) var ice: texture_2d<f32>;
+@group(2) @binding(3) var ice_sampler: sampler;
 
 // ASPECT RATIO
 fn scale_aspect(fc: vec2<f32>) -> vec2<f32> {
@@ -193,7 +193,40 @@ fn rotate3d(v: vec3<f32>, angleX: f32, angleY: f32) -> vec3<f32> {
  return rotatedY;
 }
 
+fn sRGB_to_linear(sRGB: vec3<f32>) -> vec3<f32> {
+  var linear: vec3<f32> = vec3(0.0);
+  let cr = sRGB.r;
+  let cg = sRGB.g;
+  let cb = sRGB.b;
+  let cr_check = step(cr, 0.04045);
+  let cg_check = step(cg, 0.04045);
+  let cb_check = step(cb, 0.04045);
+  
+  linear.r = cr_check*(cr / 12.92) + (1.0 - cr_check)*pow((cr + 0.055) / 1.055, 2.4);
+  linear.g = cg_check*(cg / 12.92) + (1.0 - cg_check)*pow((cg + 0.055) / 1.055, 2.4);
+  linear.b = cb_check*(cb / 12.92) + (1.0 - cb_check)*pow((cb + 0.055) / 1.055, 2.4);
+
+  return linear;
+}
+
+
 // TERRAIN/TEXTURE MAPPING
+fn ice_uniplanar_mapping(pos: vec3<f32>, uv: vec2<f32>, radius: f32) -> vec3<f32> {
+  let l = length(pos);
+  
+  // Calculate tex coordinates for Y plane
+  var tex_XZ = vec2(pos.x / l, pos.z / l) * 0.5 + 0.5;
+  
+  // Calc normal, exp to sharpen borders between planes
+  var n = abs(get_normal_rm(pos, radius));
+  n *= n*n*n*n*n;
+  n /= n.x + n.y + n.z;
+
+  var XZ: vec3<f32> = textureSample(terrain, terrain_sampler, tex_XZ).rgb * n.y;
+  XZ = sRGB_to_linear(XZ);
+  return XZ;
+}
+
 fn tex_triplanar_mapping(pos: vec3<f32>, uv: vec2<f32>, radius: f32) -> vec2<f32> {
   let amp = 10.0;
   let l = length(pos);
@@ -344,8 +377,8 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
     let latitude = abs(cam_pos.y / WATER_LEVEL);
 
     // ICE
-    if dist_origin > ICE_LEVEL - latitude*1.4 || latitude > 0.95 {
-      col += light;
+    if dist_origin > ICE_LEVEL - latitude*1.8 || latitude > 0.95 {
+      col += ice_uniplanar_mapping(terrain.pos, uv, PLANET_RADIUS);
     // UNDERWATER
     } else if dist_origin < WATER_LEVEL {
       let rg = max(0.0, (1.0 - wd)*0.1);
