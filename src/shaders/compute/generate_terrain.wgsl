@@ -23,7 +23,6 @@ const m2Inv: mat2x2<f32> = mat2x2(
 @group(1) @binding(9) var<storage, read_write> debug: vec4<f32>;
 
 @group(2) @binding(0) var terrain: texture_storage_2d<rgba32float, read_write>;
-@group(2) @binding(1) var waves: texture_storage_2d<rgba32float, read_write>;
 
 struct TimeUniform {
 time: f32,
@@ -98,6 +97,24 @@ fn fbm(pos: vec2<f32>) -> f32 {
   return res;
 }
 
+fn high_freq_fbm(pos: vec2<f32>) -> f32 {
+  var p = pos;
+  var f = 2.03;
+  let s = 0.49;
+  var res = 0.0;
+  var frac = 0.03125;
+  let octaves = tp.octaves - 10;
+
+  for (var i: i32 = 0; i < octaves; i++) {
+    res += frac*perlinNoise2(p);
+    frac *= s;
+    p = f*m2*p;
+    f -= 0.01;
+  }
+
+  return res;
+}
+
 fn generate_waves(pos: vec2<f32>, terrain_height: f32) -> f32 {
   let height = 0.1;
   let freq = 10.0;
@@ -118,9 +135,11 @@ fn generate_terrain_map(@builtin(global_invocation_id) id: vec3<u32>) {
   TEX_HEIGHT)) - 1.0;
 
   var tx = textureLoad(terrain, tx_coord);
-  let noise = fbm(tx_uv);
-  tx.x += noise;
-  tx.y += generate_waves(tx_uv, noise);
-  debug_arr[id.x] = tx; 
+  let terrain_noise = fbm(tx_uv);
+  let ice_noise = high_freq_fbm(tx_uv);
+
+  tx.x += terrain_noise;
+  tx.y += ice_noise;
+
   textureStore(terrain, tx_coord, tx);
 }
