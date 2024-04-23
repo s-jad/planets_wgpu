@@ -1,9 +1,13 @@
+use anyhow::{Context, Result};
+use std::env;
+
+use image::Pixel;
 use wgpu::util::DeviceExt;
 
 use crate::collections::{
     consts::{
-        SCREEN_HEIGHT, SCREEN_WIDTH, TERRAIN_TEX_BUF_SIZE, TEXTURE_HEIGHT, TEXTURE_WIDTH,
-        WAVE_TEX_BUF_SIZE,
+        ICE_TEXTURE_HEIGHT, ICE_TEXTURE_WIDTH, ICE_TEX_BUF_SIZE, TERRAIN_TEXTURE_HEIGHT,
+        TERRAIN_TEXTURE_WIDTH, TERRAIN_TEX_BUF_SIZE, WAVE_TEX_BUF_SIZE,
     },
     structs::{
         BindGroups, Buffers, DebugParams, Params, PerspectiveUniform, Pipelines, RayParams,
@@ -500,11 +504,11 @@ pub(crate) fn init_bind_groups(
             },
             wgpu::BindGroupEntry {
                 binding: 2,
-                resource: wgpu::BindingResource::TextureView(&textures.wave_view),
+                resource: wgpu::BindingResource::TextureView(&textures.ice_view),
             },
             wgpu::BindGroupEntry {
                 binding: 3,
-                resource: wgpu::BindingResource::Sampler(&textures.wave_sampler),
+                resource: wgpu::BindingResource::Sampler(&textures.ice_sampler),
             },
         ],
         label: Some("sampled_texture_bg"),
@@ -605,8 +609,8 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
     };
 
     let terrain_tex_extent = wgpu::Extent3d {
-        width: TEXTURE_WIDTH,
-        height: TEXTURE_HEIGHT,
+        width: TERRAIN_TEXTURE_WIDTH,
+        height: TERRAIN_TEXTURE_HEIGHT,
         depth_or_array_layers: 1,
     };
 
@@ -650,8 +654,8 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
     };
 
     let wave_tex_extent = wgpu::Extent3d {
-        width: TEXTURE_WIDTH,
-        height: TEXTURE_HEIGHT,
+        width: TERRAIN_TEXTURE_WIDTH,
+        height: TERRAIN_TEXTURE_HEIGHT,
         depth_or_array_layers: 1,
     };
 
@@ -683,10 +687,94 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
         ..Default::default()
     });
 
+    let ice_view_desc = wgpu::TextureViewDescriptor {
+        label: Some("Ice - View Descriptor"),
+        format: Some(wgpu::TextureFormat::Rgba32Float),
+        dimension: Some(wgpu::TextureViewDimension::D2),
+        aspect: wgpu::TextureAspect::All,
+        base_mip_level: 0,
+        mip_level_count: Some(1),
+        base_array_layer: 0,
+        array_layer_count: None,
+    };
+
+    let ice_tex_extent = wgpu::Extent3d {
+        width: ICE_TEXTURE_WIDTH,
+        height: ICE_TEXTURE_HEIGHT,
+        depth_or_array_layers: 1,
+    };
+
+    let ice_tex = device.create_texture_with_data(
+        queue,
+        &wgpu::TextureDescriptor {
+            label: Some("Ice - Read-Write Storage Texture"),
+            size: ice_tex_extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba32Float,
+            usage: wgpu::TextureUsages::STORAGE_BINDING
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[wgpu::TextureFormat::Rgba32Float],
+        },
+        wgpu::util::TextureDataOrder::default(),
+        &[0; ICE_TEX_BUF_SIZE],
+    );
+
+    let ice_view = ice_tex.create_view(&ice_view_desc);
+
+    let ice_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("Ice - Sampler"),
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::FilterMode::Linear,
+        ..Default::default()
+    });
+
+    // Write the image data to the texture
+    let img_rgba = decode_jpg().expect("Should decode jpg");
+
+    println!("img_rgba size: {:?}", img_rgba.len() * 4);
+    println!("ICE_TEX_BUF_SIZE: {:?}", ICE_TEX_BUF_SIZE);
+    println!(
+        "ICE_TEX CALC: {:?}",
+        ICE_TEXTURE_WIDTH * 4 * 4 * ICE_TEXTURE_HEIGHT
+    );
+    queue.write_texture(
+        wgpu::ImageCopyTexture {
+            texture: &ice_tex,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        bytemuck::cast_slice(&img_rgba),
+        wgpu::ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(ICE_TEXTURE_WIDTH * 4 * 4),
+            rows_per_image: Some(ICE_TEXTURE_HEIGHT),
+        },
+        ice_tex_extent,
+    );
+
     Textures {
         terrain_sampler,
         terrain_view,
-        wave_sampler,
-        wave_view,
+        ice_sampler,
+        ice_view,
     }
+}
+
+fn decode_jpg() -> Result<Vec<f32>> {
+    let current_dir = env::current_dir().context("Failed to get current directory")?;
+    let img = image::open(format!("{}/assets/ice.jpg", current_dir.display()))
+        .context("Failed to open image")?;
+
+    let img_rgba = img.to_rgba8();
+    let img_rgba: Vec<f32> = img_rgba
+        .pixels()
+        .flat_map(|&p| p.channels().to_vec().into_iter().map(|c| c as f32 / 255.0))
+        .collect();
+
+    Ok(img_rgba)
 }
