@@ -59,8 +59,8 @@ pub(crate) struct Pipelines {
 pub(crate) struct Textures {
     pub(crate) terrain_sampler: wgpu::Sampler,
     pub(crate) terrain_view: wgpu::TextureView,
-    pub(crate) wave_sampler: wgpu::Sampler,
-    pub(crate) wave_view: wgpu::TextureView,
+    pub(crate) ice_sampler: wgpu::Sampler,
+    pub(crate) ice_view: wgpu::TextureView,
 }
 
 // PARAMETERS
