@@ -102,10 +102,9 @@ fn high_freq_fbm(pos: vec2<f32>) -> f32 {
   var f = 2.03;
   let s = 0.49;
   var res = 0.0;
-  var frac = 0.03125;
-  let octaves = tp.octaves - 10;
+  var frac = 0.125;
 
-  for (var i: i32 = 0; i < octaves; i++) {
+  for (var i: i32 = 0; i < tp.octaves; i++) {
     res += frac*perlinNoise2(p);
     frac *= s;
     p = f*m2*p;
@@ -137,9 +136,11 @@ fn generate_terrain_map(@builtin(global_invocation_id) id: vec3<u32>) {
   var tx = textureLoad(terrain, tx_coord);
   let terrain_noise = fbm(tx_uv);
   let ice_noise = high_freq_fbm(tx_uv);
+  let moon_noise = fbm(tx_uv*(0.534251112341));
 
   tx.x += terrain_noise;
   tx.y += ice_noise;
+  tx.z += moon_noise;
 
   textureStore(terrain, tx_coord, tx);
 }
