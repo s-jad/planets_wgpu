@@ -93,10 +93,6 @@ fn scale_aspect(fc: vec2<f32>) -> vec2<f32> {
   return uv;
 }
 
-fn sphereSDF(pos: vec3<f32>, radius: f32) -> f32 {
-  return length(pos) - radius;
-}
-
 // LIGHTING
 fn get_normal(pos: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
   let e = vec2(rp.epsilon, 0.0);
@@ -257,13 +253,81 @@ fn calculate_slope(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
     return slope_in_degrees;
 }
 
+// SIGNED DISTANCE FUNCTIONS
+// Found at the brilliant Inigo Quilezles' site here:
+// https://iquilezles.org/articles/smin/
+fn unionSDF(d1: f32, d2: f32) -> f32 {
+  return min(d1, d2);
+}
+
+fn subtractSDF(d1: f32, d2: f32) -> f32 {
+  return max(-d1, d2);
+}
+
+fn smooth_unionSDF(d1: f32,  d2: f32, k: f32) -> f32 {
+    let h = clamp( 0.5 + 0.5*(d2-d1)/k, 0.0, 1.0 );
+    return mix( d2, d1, h ) - k*h*(1.0-h);
+}
+
+fn smooth_subtractSDF(d1: f32, d2: f32, k: f32 ) -> f32 {
+    let h = clamp( 0.5 - 0.5*(d2+d1)/k, 0.0, 1.0 );
+    return mix( d2, -d1, h ) + k*h*(1.0-h);
+}
+
+fn sphereSDF(pos: vec3<f32>, radius: f32) -> f32 {
+  return length(pos) - radius;
+}
+
+fn ellipsoidSDF(pos: vec3<f32>, radius: f32) -> f32 {
+  let k0 = length(pos / radius);
+  let k1 = length(pos / (radius*radius));
+  return k0*(k0 - 1.0) / k1;
+}
+
+// PCG AND SEED
+var<private> seed: u32 = 1234;
+
+fn pcg_u32() -> u32 {
+    let old_seed = seed + 747796405u + 2891336453u;
+    let word = ((old_seed >> ((old_seed >> 28u) + 4u)) ^ old_seed) * 277803737u;
+    seed = (word >> 22u) ^ word;
+    return word;
+}
+
+fn pcg_f32() -> f32 {
+    let state = pcg_u32();
+    return f32(state) / f32(0xffffffffu);
+}
+
+// MOON
 fn get_moon_position() -> vec3<f32> {
-  let angle = tu.time*MOON_ORBIT_SPEED;
+  let angle = 1.0; // tu.time*MOON_ORBIT_SPEED;
   let x = MOON_ORBIT_RADIUS*cos(angle);
   let z = MOON_ORBIT_RADIUS*sin(angle);
   let y = MOON_ORBIT_INCLINATION*sin(angle)*3.0;
 
-  return vec3(x, y - MOON_ORBIT_INCLINATION - x*0.1, z);
+  //return vec3(x, y - MOON_ORBIT_INCLINATION - x*0.1, z);
+
+  return vec3(0.0, 0.0, 100.0);
+}
+
+fn get_moon(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
+  let moon_offset = get_moon_position();
+  let moon_pos = pos + moon_offset;
+  var moon = sphereSDF(moon_pos, MOON_RADIUS);
+  let num_craters: i32 = 4;
+  let k1 = 0.1;
+  let k2 = 0.3;
+
+  for (var i: i32 = 0; i < num_craters; i++) {
+    let r = 2.0;
+    var e1 = ellipsoidSDF(moon_pos + MOON_RADIUS - r - 1.0, r);
+    let e2 = ellipsoidSDF(moon_pos + MOON_RADIUS - r - 0.3, r - 0.2);
+    e1 = smooth_subtractSDF(e2, e1, k1);
+    moon = smooth_unionSDF(e1, moon, k2);
+  }
+
+  return moon;
 }
 
 struct Terrain {
@@ -283,14 +347,15 @@ fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> Terrain {
   let water_depth = max(0.0, d1 - d0);
   // Cover lower elevations in water
   d1 = min(d0, d1);
-  // If above 0.95 latitude use ice texture on water
+  // If above 0.95 latitude add ice texture on water
   let latitude = abs(pos.y / PLANET_RADIUS); 
   let ice_switch = step(0.95, latitude);
+  // Dont add extra texture to polar mountains
   let polar_flats_switch = step(length(rPos - CENTER), WATER_LEVEL);
   d1 += polar_flats_switch*ice_switch*tx.y*1.8;
   
-  let moon_offset = get_moon_position();
-  var moon = sphereSDF(pos + moon_offset, MOON_RADIUS);
+  let moon = get_moon(pos, uv);
+
   d1 = min(moon, d1);
   
   return Terrain(d1, water_depth);
@@ -355,8 +420,8 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
   var ro: vec3<f32> = vec3(0.0, 0.0, -300.0);
   ro = rotate3d(ro, vp.y_rot, vp.x_rot);
 
-  let look_at: vec3<f32> = vec3(0.0, 0.0, 0.0);
-  
+  let look_at: vec3<f32> = vec3(0.0, 0.0, -100.0);
+
   var rd: vec3<f32> = (get_cam(ro, look_at) * normalize(vec4(uv * FOV, 1.0, 0.0))).xyz;
   let terrain = ray_march(ro, rd, uv, look_at);
   let dist: f32 = terrain.dist;
