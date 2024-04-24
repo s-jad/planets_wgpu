@@ -17,17 +17,23 @@ const PLANET_ROTATION: f32 = 0.1;
 const PLANET_RADIUS: f32 = 50.0;
 
 const MOON_RADIUS: f32 = 5.0;
-const MOON_ORBIT_SPEED: f32 = 0.7;
+const MOON_ORBIT_SPEED: f32 = 0.2;
 const MOON_ORBIT_RADIUS: f32 = 75.0;
 const MOON_ORBIT_INCLINATION: f32 = 5.0;
 
 // Measured via distance from planet center
 const WATER_LEVEL: f32 = 50.3;
 const SAND_LEVEL: f32 = WATER_LEVEL + 0.2 ;
-const VEGETATION_LEVEL: f32 = WATER_LEVEL + 2.2;
-const ICE_LEVEL: f32 = WATER_LEVEL + 3.8;
+const PLANT_LEVEL: f32 = WATER_LEVEL + 2.3;
+const ICE_LEVEL: f32 = WATER_LEVEL + 3.3;
 
-const SAND_CLR: vec3<f32> = vec3(0.8, 0.8, 0.1);
+// Steepness thresholds
+const SAND_THRESHOLD: f32 = 10.0;
+const PLANT_THRESHOLD: f32 = 36.0;
+const EARTH_THRESHOLD: f32 = 40.0;
+
+const SAND_CLR1: vec3<f32> = vec3(0.8, 0.8, 0.1);
+const SAND_CLR2: vec3<f32> = vec3(0.3975, 0.775, 0.06);
 const PLANT_CLR1: vec3<f32> = vec3(0.05, 0.75, 0.02);
 const PLANT_CLR2: vec3<f32> = vec3(0.0, 0.25, 0.07);
 const EARTH_CLR: vec3<f32> = vec3(0.3, 0.18, 0.1);
@@ -36,7 +42,7 @@ const ICE_CLR: vec3<f32> = vec3(1.0, 1.0, 1.0);
 
 const PLANT_REFLECTIVITY: f32 = 0.25;
 const ROCK_REFLECTIVITY: f32 = 0.35;
-const SAND_REFLECTIVITY: f32 = 0.45;
+const SAND_REFLECTIVITY: f32 = 0.5;
 const WATER_REFLECTIVITY: f32 = 0.9;
 const ICE_REFLECTIVITY: f32 = 1.0;
 
@@ -62,9 +68,9 @@ struct RayParams {
 struct ViewParams {
   x_shift: f32,
   y_shift: f32,
+  zoom: f32,
   x_rot: f32,
   y_rot: f32,
-  zoom: f32,
   time_modifier: f32,
 }
 
@@ -121,14 +127,14 @@ fn get_ambient_occlusion(pos: vec3<f32>, normal: vec3<f32>, uv: vec2<f32>) -> f3
 fn get_soft_shadow(pos: vec3<f32>, light_pos: vec3<f32>, uv: vec2<f32>) -> f32 {
   var res = 1.0;
   var dist = 0.01;
-  let light_size = 0.1;
+  let light_size = 100.0;
 
   for (var i: i32 = 0; i < 8; i++) {
     let hit = map(pos + light_pos * dist, uv).dist;
     res = min(res, hit / (dist * light_size));
     if (hit < rp.epsilon) { break; }
     dist += hit;
-    if (dist > 40.0) { break; }
+    if (dist > 50.0) { break; }
   }
 
   return clamp(res, 0.0, 1.0);
@@ -148,7 +154,7 @@ fn get_light(
   uv: vec2<f32>,
   material: MaterialEnum,
 ) -> vec3<f32> {
-  var light_pos: vec3<f32> = vec3(100.0, 100.0, 100.0);
+  var light_pos: vec3<f32> = vec3(40.0, 50.0, -500.0);
   let color: vec3<f32> = vec3(1.0);
 
   let l: vec3<f32> = normalize(light_pos - pos);
@@ -159,10 +165,7 @@ fn get_light(
 
   let diff: f32 = 0.70 * max(dot(l, normal), 0.0);
   let specular: f32 = 0.30 * pow(clamp(dot(r, v), 0.0, 1.0), 10.0);
-  let ambient: f32 = 0.10; 
-  
-  let dist_origin = length(pos);
-  let latitude = abs(pos.y / WATER_LEVEL);
+  let ambient: f32 = 0.05; 
 
   var reflect: f32 = 0.0;
   reflect += material.ice*ICE_REFLECTIVITY;
@@ -222,22 +225,6 @@ fn rotate3d(v: vec3<f32>, angleX: f32, angleY: f32) -> vec3<f32> {
 }
 
 // TERRAIN/TEXTURE MAPPING
-fn ice_uniplanar_mapping(pos: vec3<f32>, uv: vec2<f32>, radius: f32) -> vec3<f32> {
-  let amp = 40.0;
-  let l = length(pos);
-  
-  // Calculate tex coordinates for Y plane
-  var tex_XZ = vec2(pos.x / l, pos.z / l) * 0.5 + 0.5;
-  
-  // Calc normal, exp to sharpen borders between planes
-  var n = abs(get_normal_rm(pos, radius));
-  n *= n*n*n*n*n;
-  n /= n.x + n.y + n.z;
-
-  var XZ: vec3<f32> = textureSample(terrain, terrain_sampler, tex_XZ).rgb * amp * n.y;
-  return XZ;
-}
-
 fn tex_triplanar_mapping(pos: vec3<f32>, uv: vec2<f32>, radius: f32) -> vec2<f32> {
   let amp = 10.0;
   let l = length(pos);
@@ -259,7 +246,6 @@ fn tex_triplanar_mapping(pos: vec3<f32>, uv: vec2<f32>, radius: f32) -> vec2<f32
 
   return XY + XZ + YZ;
 }
-
 
 fn calculate_slope(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
     let r_vec = normalize(pos);
@@ -300,7 +286,8 @@ fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> Terrain {
   // If above 0.95 latitude use ice texture on water
   let latitude = abs(pos.y / PLANET_RADIUS); 
   let ice_switch = step(0.95, latitude);
-  d1 += ice_switch*tx.y;
+  let polar_flats_switch = step(length(rPos - CENTER), WATER_LEVEL);
+  d1 += polar_flats_switch*ice_switch*tx.y*1.8;
   
   let moon_offset = get_moon_position();
   var moon = sphereSDF(pos + moon_offset, MOON_RADIUS);
@@ -337,9 +324,8 @@ struct TerrainPos {
   pos: vec3<f32>,
 }
 
-fn ray_march(ro: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>) -> TerrainPos {
+fn ray_march(ro: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>, look_at: vec3<f32>) -> TerrainPos {
   let steps = i32(rp.max_steps);
-
   var dist = 0.0;
   var water_depth = 0.0;
   var p = vec3(0.0);
@@ -366,20 +352,16 @@ fn ray_march(ro: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>) -> TerrainPos {
 
 // RENDERING
 fn render(uv: vec2<f32>) -> vec3<f32> {
-  var ro: vec3<f32> = vec3(0.0, 0.0, 300.0);
+  var ro: vec3<f32> = vec3(0.0, 0.0, -300.0);
   ro = rotate3d(ro, vp.y_rot, vp.x_rot);
 
   let look_at: vec3<f32> = vec3(0.0, 0.0, 0.0);
   
   var rd: vec3<f32> = (get_cam(ro, look_at) * normalize(vec4(uv * FOV, 1.0, 0.0))).xyz;
-  let terrain = ray_march(ro, rd, uv);
+  let terrain = ray_march(ro, rd, uv, look_at);
   let dist: f32 = terrain.dist;
   let wd = terrain.water_depth;
   let steepness = calculate_slope(terrain.pos, uv);
-
-  let beach_threshold = 10.0;
-  let growth_threshold = 36.0;
-  let earth_threshold = 40.0;
 
   let cam_pos = ro + dist * rd;
   var col: vec3<f32> = vec3(0.0);
@@ -388,51 +370,60 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
   if (dist < rp.max_dist) {
     let dist_origin: f32 = length(cam_pos);
     let latitude = abs(cam_pos.y / WATER_LEVEL);
+    let adjusted_ice_level = ICE_LEVEL - latitude*1.8;
 
     // ICE
-    if dist_origin > ICE_LEVEL - latitude*2.0 || latitude > 0.95 {
-      material.ice = 1.0;
-      col += get_light(cam_pos, rd, uv, material);
-
+    if dist_origin > adjusted_ice_level {
+      let ef = smoothstep(adjusted_ice_level, adjusted_ice_level + 1.0, dist_origin);
+      let ice_clr = mix(ROCK_CLR, ICE_CLR, ef);
+      material.ice = 1.0*ef;
+      material.rock = 1.0 - 1.0*ef;
+      col += get_light(cam_pos, rd, uv, material)*ice_clr;
+    } 
+    if latitude > 0.95 {
+      let ef = smoothstep(0.95, 0.96, latitude);
+      let ice_clr = mix(ROCK_CLR, ICE_CLR, ef);
+      material.ice = 1.0*ef;
+      col += get_light(cam_pos, rd, uv, material)*ice_clr;
     // UNDERWATER
     } else if dist_origin < WATER_LEVEL {
       let rg = max(0.0, (1.0 - wd)*0.1);
-      let b = 1.0 - 0.15*wd;
+      let b = 1.0 - 0.1*wd;
+      let water_clr = vec3(rg, rg, b);
       material.water = 1.0;
-      col += get_light(cam_pos, rd, uv, material)*vec3(rg, rg, b);
-
+      col += get_light(cam_pos, rd, uv, material)*water_clr;
     // BEACHES
     } else if (
       dist_origin < SAND_LEVEL
       && latitude < 0.75
     ) {
+      let ef = smoothstep(SAND_LEVEL - 0.1, SAND_LEVEL, dist_origin);
+      let beach_clr = mix(SAND_CLR1, SAND_CLR2, ef);
       material.sand = 1.0;
-      col += get_light(cam_pos, rd, uv, material)*SAND_CLR;
-
+      col += get_light(cam_pos, rd, uv, material)*beach_clr;
     // PLANTS
     } else if (
-      dist_origin < VEGETATION_LEVEL - latitude*1.4 
+      dist_origin < PLANT_LEVEL - latitude*1.4 
       && latitude < 0.85 
-      && steepness < growth_threshold 
+      && steepness < PLANT_THRESHOLD 
     ) {
-      let height_mixer = (dist_origin - SAND_LEVEL)*0.4;
-      let steep_mixer = (steepness - beach_threshold)*0.04;
+      let height_mixer = smoothstep(SAND_LEVEL, PLANT_LEVEL, dist_origin);
+      let steep_mixer = smoothstep(SAND_THRESHOLD, PLANT_THRESHOLD, steepness);
       let hp_mix = mix(PLANT_CLR1, PLANT_CLR2, height_mixer);
       let sp_mix = mix(PLANT_CLR1, PLANT_CLR2, steep_mixer);
       let hp_mix2 = mix(hp_mix, EARTH_CLR, height_mixer*0.7);
-      let sp_mix2 = mix(sp_mix, EARTH_CLR, steep_mixer*0.7);
+      let sp_mix2 = mix(sp_mix, EARTH_CLR, steep_mixer*0.4);
       
       material.plant = 1.0;
-      col += get_light(cam_pos, rd, uv, material)*(sp_mix2 + hp_mix2)*0.4;
-
+      col += get_light(cam_pos, rd, uv, material)*(sp_mix2 + hp_mix2)*0.5;
     // EARTH/ROCK
     } else {
-      let low_steep = step(dist_origin, VEGETATION_LEVEL)*(steepness - growth_threshold)*0.04;
-      let high_altitude = step(VEGETATION_LEVEL, dist_origin)*(dist_origin+1.0 - VEGETATION_LEVEL);
-    
+      let low_steep = step(dist_origin, PLANT_LEVEL)*(steepness - PLANT_THRESHOLD)*0.04;
+      let high_altitude = step(PLANT_LEVEL, dist_origin)*(dist_origin+1.0 - PLANT_LEVEL);
       let er_mixer = low_steep + high_altitude;
+      let mountain_clr = mix(EARTH_CLR, ROCK_CLR, er_mixer);
       material.rock = 1.0;
-      col += get_light(cam_pos, rd, uv, material)*mix(EARTH_CLR, ROCK_CLR, er_mixer);
+      col += get_light(cam_pos, rd, uv, material)*mountain_clr;
     }
   }
   
@@ -443,7 +434,6 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
 fn main(@builtin(position) FragCoord: vec4<f32>) -> @location(0) vec4<f32> {
   let t: f32 = tu.time * vp.time_modifier;
   var uv: vec2<f32> = scale_aspect(FragCoord.xy); // Scale to -1.0 -> 1.0 + fix aspect ratio
-
   let uv0 = uv;
   uv.x += vp.x_shift * vp.zoom;
   uv.y += vp.y_shift * vp.zoom;
