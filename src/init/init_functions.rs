@@ -1,13 +1,8 @@
-use anyhow::{Context, Result};
-use std::env;
-
-use image::Pixel;
 use wgpu::util::DeviceExt;
 
 use crate::collections::{
     consts::{
-        ICE_TEXTURE_HEIGHT, ICE_TEXTURE_WIDTH, ICE_TEX_BUF_SIZE, TERRAIN_TEXTURE_HEIGHT,
-        TERRAIN_TEXTURE_WIDTH, TERRAIN_TEX_BUF_SIZE, WAVE_TEX_BUF_SIZE,
+        TERRAIN_TEXTURE_HEIGHT, TERRAIN_TEXTURE_WIDTH, TERRAIN_TEX_BUF_SIZE, WAVE_TEX_BUF_SIZE,
     },
     structs::{
         BindGroups, Buffers, DebugParams, Params, PerspectiveUniform, Pipelines, RayParams,
@@ -48,12 +43,12 @@ pub(crate) fn init_shader_modules(device: &wgpu::Device) -> ShaderModules {
 }
 
 pub(crate) fn init_params() -> Params {
-    let terrain_params = TerrainParams { octaves: 21 };
+    let terrain_params = TerrainParams { octaves: 19 };
 
     let ray_params = RayParams {
-        epsilon: 0.03,
-        max_steps: 900.0,
-        max_dist: 1200.0,
+        epsilon: 0.02,
+        max_steps: 2500.0,
+        max_dist: 500.0,
     };
 
     let debug_params = DebugParams {
@@ -63,13 +58,12 @@ pub(crate) fn init_params() -> Params {
 
     let view_params = ViewParams {
         x_shift: 0.0,
-        // TEMPORARY - fix issue with projection matrix
         y_shift: 0.0,
+        zoom: 1.0,
         x_rot: 0.0,
         y_rot: 0.0,
-        zoom: 1.0,
         time_modifier: 1.0,
-        fov_degrees: 90.0,
+        fov_degrees: 20.0,
     };
 
     let perspective_uniform = get_perspective_projection();
@@ -139,9 +133,9 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
             contents: bytemuck::cast_slice(&[
                 params.view_params.x_shift,
                 params.view_params.y_shift,
+                params.view_params.zoom,
                 params.view_params.x_rot,
                 params.view_params.y_rot,
-                params.view_params.zoom,
                 params.view_params.time_modifier,
                 params.view_params.fov_degrees,
             ]),
@@ -597,6 +591,7 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
         mag_filter: wgpu::FilterMode::Linear,
         min_filter: wgpu::FilterMode::Linear,
         mipmap_filter: wgpu::FilterMode::Linear,
+        anisotropy_clamp: 2,
         ..Default::default()
     });
 
