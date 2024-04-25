@@ -221,8 +221,7 @@ fn rotate3d(v: vec3<f32>, angleX: f32, angleY: f32) -> vec3<f32> {
 }
 
 // TERRAIN/TEXTURE MAPPING
-fn tex_triplanar_mapping(pos: vec3<f32>, uv: vec2<f32>, radius: f32) -> vec2<f32> {
-  let amp = 10.0;
+fn tex_triplanar_mapping(pos: vec3<f32>, uv: vec2<f32>, radius: f32, amp: f32) -> vec4<f32> {
   let l = length(pos);
   
   // Calculate tex coordinates for each of the 3 planes
@@ -236,9 +235,9 @@ fn tex_triplanar_mapping(pos: vec3<f32>, uv: vec2<f32>, radius: f32) -> vec2<f32
   n *= n*n*n*n*n;
   n /= n.x + n.y + n.z;
 
-  let XY: vec2<f32> = textureSample(terrain, terrain_sampler, tex_XY).xy * amp * n.z;
-  let XZ: vec2<f32> = textureSample(terrain, terrain_sampler, tex_XZ).xy * amp * n.y;
-  let YZ: vec2<f32> = textureSample(terrain, terrain_sampler, tex_YZ).xy * amp * n.x;
+  let XY: vec4<f32> = textureSample(terrain, terrain_sampler, tex_XY) * amp * n.z;
+  let XZ: vec4<f32> = textureSample(terrain, terrain_sampler, tex_XZ) * amp * n.y;
+  let YZ: vec4<f32> = textureSample(terrain, terrain_sampler, tex_YZ) * amp * n.x;
 
   return XY + XZ + YZ;
 }
@@ -340,8 +339,13 @@ fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> Terrain {
   var d1 = sphereSDF(rPos, PLANET_RADIUS);
   var d0 = d1;
   
-  let tx = tex_triplanar_mapping(rPos, uv, PLANET_RADIUS);
+  let pt_amp = 10.0;
+  let tx = tex_triplanar_mapping(rPos, uv, PLANET_RADIUS, pt_amp);
   d1 += tx.x;
+  d1 += tx.y;
+  
+  let high_alt = step(PLANT_LEVEL, length(rPos - CENTER));
+  d1 += tx.z;
 
   // Calc water depth for use in render
   let water_depth = max(0.0, d1 - d0);
@@ -352,9 +356,9 @@ fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> Terrain {
   let ice_switch = step(0.95, latitude);
   // Dont add extra texture to polar mountains
   let polar_flats_switch = step(length(rPos - CENTER), WATER_LEVEL);
-  d1 += polar_flats_switch*ice_switch*tx.y*1.8;
+  d1 += polar_flats_switch*ice_switch*tx.w*1.8;
   
-  let moon = get_moon(pos, uv);
+  var moon = get_moon(pos, uv);
 
   d1 = min(moon, d1);
   
@@ -420,7 +424,7 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
   var ro: vec3<f32> = vec3(0.0, 0.0, -300.0);
   ro = rotate3d(ro, vp.y_rot, vp.x_rot);
 
-  let look_at: vec3<f32> = vec3(0.0, 0.0, -100.0);
+  let look_at: vec3<f32> = vec3(0.0, 0.0, 0.0);
 
   var rd: vec3<f32> = (get_cam(ro, look_at) * normalize(vec4(uv * FOV, 1.0, 0.0))).xyz;
   let terrain = ray_march(ro, rd, uv, look_at);
