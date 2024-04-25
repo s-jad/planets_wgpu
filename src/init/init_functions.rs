@@ -1,7 +1,10 @@
 use wgpu::util::DeviceExt;
 
 use crate::collections::{
-    consts::{PLANET_TEXTURE_HEIGHT, PLANET_TEXTURE_WIDTH, PLANET_TEX_BUF_SIZE},
+    consts::{
+        MOON_TEXTURE_HEIGHT, MOON_TEXTURE_WIDTH, MOON_TEX_BUF_SIZE, PLANET_TEXTURE_HEIGHT,
+        PLANET_TEXTURE_WIDTH, PLANET_TEX_BUF_SIZE,
+    },
     structs::{
         BindGroups, Buffers, DebugParams, Params, PerspectiveUniform, Pipelines, RayParams,
         ShaderModules, TerrainParams, Textures, TimeUniform, ViewParams,
@@ -405,25 +408,43 @@ pub(crate) fn init_bind_groups(
     });
 
     let texture_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::StorageTexture {
-                access: wgpu::StorageTextureAccess::ReadWrite,
-                format: wgpu::TextureFormat::Rgba32Float,
-                view_dimension: wgpu::TextureViewDimension::D2,
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::StorageTexture {
+                    access: wgpu::StorageTextureAccess::ReadWrite,
+                    format: wgpu::TextureFormat::Rgba32Float,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                },
+                count: None,
             },
-            count: None,
-        }],
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::StorageTexture {
+                    access: wgpu::StorageTextureAccess::ReadWrite,
+                    format: wgpu::TextureFormat::Rgba32Float,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                },
+                count: None,
+            },
+        ],
         label: Some("texture_bgl"),
     });
 
     let texture_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: &texture_bgl,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::TextureView(&textures.planet_view),
-        }],
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&textures.planet_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&textures.moon_view),
+            },
+        ],
         label: Some("texture_bg"),
     });
 
@@ -445,6 +466,22 @@ pub(crate) fn init_bind_groups(
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
         ],
         label: Some("sampled_texture_bgl"),
     });
@@ -459,6 +496,14 @@ pub(crate) fn init_bind_groups(
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: wgpu::BindingResource::Sampler(&textures.planet_sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(&textures.moon_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::Sampler(&textures.moon_sampler),
             },
         ],
         label: Some("sampled_texture_bg"),
@@ -533,16 +578,25 @@ pub(crate) fn init_pipelines(
         push_constant_ranges: &[],
     });
 
-    let generate_terrain = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("Generate Terrrain Pipeline"),
+    let generate_planet_terrain =
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Generate Planet Terrrain Pipeline"),
+            layout: Some(&compute_pipeline_layout),
+            module: &shader_modules.generate_terrain,
+            entry_point: "generate_planet_terrain_map",
+        });
+
+    let generate_moon_terrain = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("Generate Moon Terrain Pipeline"),
         layout: Some(&compute_pipeline_layout),
         module: &shader_modules.generate_terrain,
-        entry_point: "generate_terrain_map",
+        entry_point: "generate_moon_terrain_map",
     });
 
     Pipelines {
         render,
-        generate_terrain,
+        generate_planet_terrain,
+        generate_moon_terrain,
     }
 }
 
@@ -593,8 +647,55 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
         ..Default::default()
     });
 
+    let moon_view_desc = wgpu::TextureViewDescriptor {
+        label: Some("moon - View Descriptor"),
+        format: Some(wgpu::TextureFormat::Rgba32Float),
+        dimension: Some(wgpu::TextureViewDimension::D2),
+        aspect: wgpu::TextureAspect::All,
+        base_mip_level: 0,
+        mip_level_count: Some(1),
+        base_array_layer: 0,
+        array_layer_count: None,
+    };
+
+    let moon_tex_extent = wgpu::Extent3d {
+        width: MOON_TEXTURE_WIDTH,
+        height: MOON_TEXTURE_HEIGHT,
+        depth_or_array_layers: 1,
+    };
+
+    let moon_tex = device.create_texture_with_data(
+        queue,
+        &wgpu::TextureDescriptor {
+            label: Some("moon - Read-Write Storage Texture"),
+            size: moon_tex_extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba32Float,
+            usage: wgpu::TextureUsages::STORAGE_BINDING
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[wgpu::TextureFormat::Rgba32Float],
+        },
+        wgpu::util::TextureDataOrder::default(),
+        &[0; MOON_TEX_BUF_SIZE],
+    );
+
+    let moon_view = moon_tex.create_view(&moon_view_desc);
+
+    let moon_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("moons - Sampler"),
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::FilterMode::Linear,
+        ..Default::default()
+    });
+
     Textures {
         planet_sampler,
         planet_view,
+        moon_sampler,
+        moon_view,
     }
 }
