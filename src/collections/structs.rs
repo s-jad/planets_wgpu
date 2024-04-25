@@ -52,13 +52,16 @@ pub(crate) struct ShaderModules {
 #[derive(Debug)]
 pub(crate) struct Pipelines {
     pub(crate) render: wgpu::RenderPipeline,
-    pub(crate) generate_terrain: wgpu::ComputePipeline,
+    pub(crate) generate_planet_terrain: wgpu::ComputePipeline,
+    pub(crate) generate_moon_terrain: wgpu::ComputePipeline,
 }
 
 #[derive(Debug)]
 pub(crate) struct Textures {
     pub(crate) planet_sampler: wgpu::Sampler,
     pub(crate) planet_view: wgpu::TextureView,
+    pub(crate) moon_sampler: wgpu::Sampler,
+    pub(crate) moon_view: wgpu::TextureView,
 }
 
 // PARAMETERS
