@@ -57,8 +57,8 @@ pub(crate) struct Pipelines {
 
 #[derive(Debug)]
 pub(crate) struct Textures {
-    pub(crate) terrain_sampler: wgpu::Sampler,
-    pub(crate) terrain_view: wgpu::TextureView,
+    pub(crate) planet_sampler: wgpu::Sampler,
+    pub(crate) planet_view: wgpu::TextureView,
 }
 
 // PARAMETERS
@@ -97,9 +97,9 @@ pub(crate) struct DebugParams {
 pub(crate) struct ViewParams {
     pub(crate) x_shift: f32,
     pub(crate) y_shift: f32,
+    pub(crate) zoom: f32,
     pub(crate) x_rot: f32,
     pub(crate) y_rot: f32,
-    pub(crate) zoom: f32,
     pub(crate) time_modifier: f32,
     pub(crate) fov_degrees: f32,
 }
