@@ -1,9 +1,7 @@
 use wgpu::util::DeviceExt;
 
 use crate::collections::{
-    consts::{
-        TERRAIN_TEXTURE_HEIGHT, TERRAIN_TEXTURE_WIDTH, TERRAIN_TEX_BUF_SIZE, WAVE_TEX_BUF_SIZE,
-    },
+    consts::{PLANET_TEXTURE_HEIGHT, PLANET_TEXTURE_WIDTH, PLANET_TEX_BUF_SIZE},
     structs::{
         BindGroups, Buffers, DebugParams, Params, PerspectiveUniform, Pipelines, RayParams,
         ShaderModules, TerrainParams, Textures, TimeUniform, ViewParams,
@@ -424,7 +422,7 @@ pub(crate) fn init_bind_groups(
         layout: &texture_bgl,
         entries: &[wgpu::BindGroupEntry {
             binding: 0,
-            resource: wgpu::BindingResource::TextureView(&textures.terrain_view),
+            resource: wgpu::BindingResource::TextureView(&textures.planet_view),
         }],
         label: Some("texture_bg"),
     });
@@ -456,11 +454,11 @@ pub(crate) fn init_bind_groups(
         entries: &[
             wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::TextureView(&textures.terrain_view),
+                resource: wgpu::BindingResource::TextureView(&textures.planet_view),
             },
             wgpu::BindGroupEntry {
                 binding: 1,
-                resource: wgpu::BindingResource::Sampler(&textures.terrain_sampler),
+                resource: wgpu::BindingResource::Sampler(&textures.planet_sampler),
             },
         ],
         label: Some("sampled_texture_bg"),
@@ -549,8 +547,8 @@ pub(crate) fn init_pipelines(
 }
 
 pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textures {
-    let terrain_view_desc = wgpu::TextureViewDescriptor {
-        label: Some("Terrain - View Descriptor"),
+    let planet_view_desc = wgpu::TextureViewDescriptor {
+        label: Some("planet - View Descriptor"),
         format: Some(wgpu::TextureFormat::Rgba32Float),
         dimension: Some(wgpu::TextureViewDimension::D2),
         aspect: wgpu::TextureAspect::All,
@@ -560,17 +558,17 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
         array_layer_count: None,
     };
 
-    let terrain_tex_extent = wgpu::Extent3d {
-        width: TERRAIN_TEXTURE_WIDTH,
-        height: TERRAIN_TEXTURE_HEIGHT,
+    let planet_tex_extent = wgpu::Extent3d {
+        width: PLANET_TEXTURE_WIDTH,
+        height: PLANET_TEXTURE_HEIGHT,
         depth_or_array_layers: 1,
     };
 
-    let terrain_tex = device.create_texture_with_data(
+    let planet_tex = device.create_texture_with_data(
         queue,
         &wgpu::TextureDescriptor {
-            label: Some("Terrain - Read-Write Storage Texture"),
-            size: terrain_tex_extent,
+            label: Some("planet - Read-Write Storage Texture"),
+            size: planet_tex_extent,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -581,13 +579,13 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
             view_formats: &[wgpu::TextureFormat::Rgba32Float],
         },
         wgpu::util::TextureDataOrder::default(),
-        &[0; TERRAIN_TEX_BUF_SIZE],
+        &[0; PLANET_TEX_BUF_SIZE],
     );
 
-    let terrain_view = terrain_tex.create_view(&terrain_view_desc);
+    let planet_view = planet_tex.create_view(&planet_view_desc);
 
-    let terrain_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        label: Some("Terrain - Sampler"),
+    let planet_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("planet - Sampler"),
         mag_filter: wgpu::FilterMode::Linear,
         min_filter: wgpu::FilterMode::Linear,
         mipmap_filter: wgpu::FilterMode::Linear,
@@ -595,53 +593,8 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
         ..Default::default()
     });
 
-    let wave_view_desc = wgpu::TextureViewDescriptor {
-        label: Some("Waves - View Descriptor"),
-        format: Some(wgpu::TextureFormat::Rgba32Float),
-        dimension: Some(wgpu::TextureViewDimension::D2),
-        aspect: wgpu::TextureAspect::All,
-        base_mip_level: 0,
-        mip_level_count: Some(1),
-        base_array_layer: 0,
-        array_layer_count: None,
-    };
-
-    let wave_tex_extent = wgpu::Extent3d {
-        width: TERRAIN_TEXTURE_WIDTH,
-        height: TERRAIN_TEXTURE_HEIGHT,
-        depth_or_array_layers: 1,
-    };
-
-    let wave_tex = device.create_texture_with_data(
-        queue,
-        &wgpu::TextureDescriptor {
-            label: Some("Waves - Read-Write Storage Texture"),
-            size: wave_tex_extent,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba32Float,
-            usage: wgpu::TextureUsages::STORAGE_BINDING
-                | wgpu::TextureUsages::TEXTURE_BINDING
-                | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[wgpu::TextureFormat::Rgba32Float],
-        },
-        wgpu::util::TextureDataOrder::default(),
-        &[0; WAVE_TEX_BUF_SIZE],
-    );
-
-    let wave_view = wave_tex.create_view(&wave_view_desc);
-
-    let wave_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        label: Some("Waves - Sampler"),
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::FilterMode::Linear,
-        ..Default::default()
-    });
-
     Textures {
-        terrain_sampler,
-        terrain_view,
+        planet_sampler,
+        planet_view,
     }
 }
