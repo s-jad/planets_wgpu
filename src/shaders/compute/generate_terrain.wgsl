@@ -26,6 +26,7 @@ const m2Inv: mat2x2<f32> = mat2x2(
 @group(1) @binding(9) var<storage, read_write> debug: vec4<f32>;
 
 @group(2) @binding(0) var planet_terrain: texture_storage_2d<rgba32float, read_write>;
+@group(2) @binding(1) var moon_terrain: texture_storage_2d<rgba32float, read_write>;
 
 struct TimeUniform {
   time: f32,
@@ -98,22 +99,38 @@ fn fbm(pos: vec2<f32>, octaves: i32, fraction: f32) -> f32 {
 
 @compute 
 @workgroup_size(32, 32, 1) 
-fn generate_terrain_map(@builtin(global_invocation_id) id: vec3<u32>) {
+fn generate_planet_terrain_map(@builtin(global_invocation_id) id: vec3<u32>) {
   let tx_coord: vec2<u32> = id.xy;
   let ptx_uv: vec2<f32> = ((2.0 * vec2(f32(tx_coord.x), f32(tx_coord.y))) / vec2(PLANET_TEX_WIDTH,
   PLANET_TEX_HEIGHT)) - 1.0;
 
   var ptx = textureLoad(planet_terrain, tx_coord);
-  var terrain_noise = fbm(ptx_uv, 11, 0.51)*1.432417;
-  terrain_noise -= fbm(ptx_uv, 3, 0.49)*0.541793;
-  terrain_noise += fbm(ptx_uv, 13, 0.47)*0.175379;
+  let t1 = fbm(ptx_uv, 11, 0.5)*1.432417;
+  let t2 = fbm(ptx_uv, 3, 0.5)*-0.541793;
+  let t3 = fbm(ptx_uv, 9, 0.5)*0.175379;
 
   let ice_noise = fbm(ptx_uv, 11, 0.125);
-  let moon_noise = fbm(ptx_uv, 7, 0.25);
 
-  ptx.x += terrain_noise;
-  ptx.y += ice_noise;
-  ptx.z += ice_noise;
+  ptx += vec4(t1, t2, t3, ice_noise);
 
   textureStore(planet_terrain, tx_coord, ptx);
+}
+
+@compute 
+@workgroup_size(32, 32, 1) 
+fn generate_moon_terrain_map(@builtin(global_invocation_id) id: vec3<u32>) {
+  let tx_coord: vec2<u32> = id.xy;
+  let mtx_uv: vec2<f32> = ((2.0 * vec2(f32(tx_coord.x), f32(tx_coord.y))) / vec2(PLANET_TEX_WIDTH,
+  PLANET_TEX_HEIGHT)) - 1.0;
+
+  var mtx = textureLoad(planet_terrain, tx_coord);
+  let t1 = fbm(mtx_uv, 5, 0.51)*0.41793;
+  let t2 = fbm(mtx_uv, 3, 0.49)*-0.2111;
+  let t3 = fbm(mtx_uv, 7, 0.47)*0.19373;
+
+  let crater_noise = fbm(mtx_uv, 11, 0.125)*0.15431;
+
+  mtx += vec4(t1, t2, t3, crater_noise);
+
+  textureStore(planet_terrain, tx_coord, mtx);
 }
