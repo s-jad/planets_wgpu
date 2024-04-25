@@ -2,8 +2,12 @@ const SCREEN_WIDTH: f32 = 1376.0;
 const SCREEN_HEIGHT: f32 = 768.0;
 const I_SCREEN_WIDTH: i32 = 1376;
 const I_SCREEN_HEIGHT: i32 = 768;
-const TEX_WIDTH: f32 = 1408.0;
-const TEX_HEIGHT: f32 = 800.0;
+
+// Incorrect (2048x2048), but when corrected
+// produces less interesting terrain
+const PLANET_TEX_WIDTH: f32 = 2048.0;
+const PLANET_TEX_HEIGHT: f32 = 2048.0;
+
 const MIN_POSITIVE_F32: f32 = 0x1.0p-126f;
 
 const m2: mat2x2<f32> = mat2x2(
@@ -18,21 +22,16 @@ const m2Inv: mat2x2<f32> = mat2x2(
 
 @group(0) @binding(0) var<uniform> tu: TimeUniform;
 
-@group(1) @binding(0) var<storage, read_write> tp: TerrainParams;
 @group(1) @binding(8) var<storage, read_write> debug_arr: array<vec4<f32>>;
 @group(1) @binding(9) var<storage, read_write> debug: vec4<f32>;
 
-@group(2) @binding(0) var terrain: texture_storage_2d<rgba32float, read_write>;
+@group(2) @binding(0) var planet_terrain: texture_storage_2d<rgba32float, read_write>;
 
 struct TimeUniform {
-time: f32,
-}
-struct TerrainParams {
-  octaves: i32,
+  time: f32,
 }
 
 // FBM
-
 // perlinNoise2 - MIT License. © Stefan Gustavson, Munrocket ------------------------------
 fn permute4(x: vec4f) -> vec4f { return ((x * 34. + 1.) * x) % vec4f(289.); }
 fn fade2(t: vec2f) -> vec2f { return t * t * t * (t * (t * 6. - 15.) + 10.); }
@@ -80,14 +79,14 @@ fn perlinNoise2(P: vec2f) -> f32 {
     return 2.3 * n_xy;
 }
 
-fn fbm(pos: vec2<f32>) -> f32 {
+fn fbm(pos: vec2<f32>, octaves: i32, fraction: f32) -> f32 {
   var p = pos;
   var f = 2.03;
   let s = 0.49;
   var res = 0.0;
-  var frac = 0.5;
+  var frac = fraction;
 
-  for (var i: i32 = 0; i < tp.octaves; i++) {
+  for (var i: i32 = 0; i < octaves; i++) {
     res += frac*perlinNoise2(p);
     frac *= s;
     p = f*m2*p;
@@ -95,52 +94,26 @@ fn fbm(pos: vec2<f32>) -> f32 {
   }
 
   return res;
-}
-
-fn high_freq_fbm(pos: vec2<f32>) -> f32 {
-  var p = pos;
-  var f = 2.03;
-  let s = 0.49;
-  var res = 0.0;
-  var frac = 0.125;
-
-  for (var i: i32 = 0; i < tp.octaves; i++) {
-    res += frac*perlinNoise2(p);
-    frac *= s;
-    p = f*m2*p;
-    f -= 0.01;
-  }
-
-  return res;
-}
-
-fn generate_waves(pos: vec2<f32>, terrain_height: f32) -> f32 {
-  let height = 0.1;
-  let freq = 10.0;
-  let speed = 1.0;
-  let amp = 1.0;
-  
-  let wx = sin(terrain_height*height*freq + pos.x*speed)*amp;
-  let wy = sin(terrain_height*height*freq + pos.y*speed)*amp;
-  
-  return wx*wy;
 }
 
 @compute 
 @workgroup_size(32, 32, 1) 
 fn generate_terrain_map(@builtin(global_invocation_id) id: vec3<u32>) {
   let tx_coord: vec2<u32> = id.xy;
-  let tx_uv: vec2<f32> = ((2.0 * vec2(f32(tx_coord.x), f32(tx_coord.y))) / vec2(TEX_WIDTH,
-  TEX_HEIGHT)) - 1.0;
+  let ptx_uv: vec2<f32> = ((2.0 * vec2(f32(tx_coord.x), f32(tx_coord.y))) / vec2(PLANET_TEX_WIDTH,
+  PLANET_TEX_HEIGHT)) - 1.0;
 
-  var tx = textureLoad(terrain, tx_coord);
-  let terrain_noise = fbm(tx_uv);
-  let ice_noise = high_freq_fbm(tx_uv);
-  let moon_noise = fbm(tx_uv*(0.534251112341));
+  var ptx = textureLoad(planet_terrain, tx_coord);
+  var terrain_noise = fbm(ptx_uv, 11, 0.51)*1.432417;
+  terrain_noise -= fbm(ptx_uv, 3, 0.49)*0.541793;
+  terrain_noise += fbm(ptx_uv, 13, 0.47)*0.175379;
 
-  tx.x += terrain_noise;
-  tx.y += ice_noise;
-  tx.z += moon_noise;
+  let ice_noise = fbm(ptx_uv, 11, 0.125);
+  let moon_noise = fbm(ptx_uv, 7, 0.25);
 
-  textureStore(terrain, tx_coord, tx);
+  ptx.x += terrain_noise;
+  ptx.y += ice_noise;
+  ptx.z += ice_noise;
+
+  textureStore(planet_terrain, tx_coord, ptx);
 }
