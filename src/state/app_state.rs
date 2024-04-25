@@ -1,6 +1,9 @@
 use crate::{
     collections::{
-        consts::{TEX_DISPATCH_SIZE_X, TEX_DISPATCH_SIZE_Y},
+        consts::{
+            MOON_TEX_DISPATCH_SIZE_X, MOON_TEX_DISPATCH_SIZE_Y, PLANET_TEX_DISPATCH_SIZE_X,
+            PLANET_TEX_DISPATCH_SIZE_Y,
+        },
         structs::{BindGroups, Buffers, Params, Pipelines},
         vertices::VERTICES,
     },
@@ -194,14 +197,31 @@ impl<'a> State<'a> {
 
         {
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Generate terrain - compute pass"),
+                label: Some("Generate planet terrain - compute pass"),
                 timestamp_writes: None,
             });
-            compute_pass.set_pipeline(&self.pipelines.generate_terrain);
+            compute_pass.set_pipeline(&self.pipelines.generate_planet_terrain);
             compute_pass.set_bind_group(0, &self.bind_groups.uniform_bg, &[]);
             compute_pass.set_bind_group(1, &self.bind_groups.compute_bg, &[]);
             compute_pass.set_bind_group(2, &self.bind_groups.texture_bg, &[]);
-            compute_pass.dispatch_workgroups(TEX_DISPATCH_SIZE_X, TEX_DISPATCH_SIZE_Y, 1);
+            compute_pass.dispatch_workgroups(
+                PLANET_TEX_DISPATCH_SIZE_X,
+                PLANET_TEX_DISPATCH_SIZE_Y,
+                1,
+            );
+            // Adjust workgroup size as needed
+        }
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Generate moon terrain - compute pass"),
+                timestamp_writes: None,
+            });
+            compute_pass.set_pipeline(&self.pipelines.generate_planet_terrain);
+            compute_pass.set_bind_group(0, &self.bind_groups.uniform_bg, &[]);
+            compute_pass.set_bind_group(1, &self.bind_groups.compute_bg, &[]);
+            compute_pass.set_bind_group(2, &self.bind_groups.texture_bg, &[]);
+            compute_pass.dispatch_workgroups(MOON_TEX_DISPATCH_SIZE_X, MOON_TEX_DISPATCH_SIZE_Y, 1);
             // Adjust workgroup size as needed
         }
 
