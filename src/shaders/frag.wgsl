@@ -82,8 +82,10 @@ struct ViewParams {
 @group(1) @binding(8) var<storage, read_write> debug_arr: array<vec4<f32>>;
 @group(1) @binding(9) var<storage, read_write> debug: vec4<f32>;
 
-@group(2) @binding(0) var terrain: texture_2d<f32>;
-@group(2) @binding(1) var terrain_sampler: sampler;
+@group(2) @binding(0) var planet_tex: texture_2d<f32>;
+@group(2) @binding(1) var planet_sampler: sampler;
+@group(2) @binding(2) var moon_tex: texture_2d<f32>;
+@group(2) @binding(3) var moon_sampler: sampler;
 
 // ASPECT RATIO
 fn scale_aspect(fc: vec2<f32>) -> vec2<f32> {
@@ -221,7 +223,14 @@ fn rotate3d(v: vec3<f32>, angleX: f32, angleY: f32) -> vec3<f32> {
 }
 
 // TERRAIN/TEXTURE MAPPING
-fn tex_triplanar_mapping(pos: vec3<f32>, uv: vec2<f32>, radius: f32, amp: f32) -> vec4<f32> {
+fn tex_triplanar_mapping(
+  pos: vec3<f32>,
+  uv: vec2<f32>,
+  radius: f32,
+  amp: f32,
+  tex: texture_2d<f32>,
+  tex_sampler: sampler,
+) -> vec4<f32> {
   let l = length(pos);
   
   // Calculate tex coordinates for each of the 3 planes
@@ -235,9 +244,9 @@ fn tex_triplanar_mapping(pos: vec3<f32>, uv: vec2<f32>, radius: f32, amp: f32) -
   n *= n*n*n*n*n;
   n /= n.x + n.y + n.z;
 
-  let XY: vec4<f32> = textureSample(terrain, terrain_sampler, tex_XY) * amp * n.z;
-  let XZ: vec4<f32> = textureSample(terrain, terrain_sampler, tex_XZ) * amp * n.y;
-  let YZ: vec4<f32> = textureSample(terrain, terrain_sampler, tex_YZ) * amp * n.x;
+  let XY: vec4<f32> = textureSample(tex, tex_sampler, tex_XY) * amp * n.z;
+  let XZ: vec4<f32> = textureSample(tex, tex_sampler, tex_XZ) * amp * n.y;
+  let YZ: vec4<f32> = textureSample(tex, tex_sampler, tex_YZ) * amp * n.x;
 
   return XY + XZ + YZ;
 }
@@ -314,17 +323,18 @@ fn get_moon(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
   let moon_offset = get_moon_position();
   let moon_pos = pos + moon_offset;
   var moon = sphereSDF(moon_pos, MOON_RADIUS);
-  let num_craters: i32 = 4;
-  let k1 = 0.1;
-  let k2 = 0.3;
+  let mt_amp = 0.2;
 
-  for (var i: i32 = 0; i < num_craters; i++) {
-    let r = 2.0;
-    var e1 = ellipsoidSDF(moon_pos + MOON_RADIUS - r - 1.0, r);
-    let e2 = ellipsoidSDF(moon_pos + MOON_RADIUS - r - 0.3, r - 0.2);
-    e1 = smooth_subtractSDF(e2, e1, k1);
-    moon = smooth_unionSDF(e1, moon, k2);
-  }
+  let mtx = tex_triplanar_mapping(
+    moon_pos, uv, 
+    MOON_RADIUS, mt_amp,
+    moon_tex, moon_sampler,
+  );
+  
+  //moon += mtx.x;
+  //moon += mtx.y;
+  //moon += mtx.z;
+  moon += mtx.w*20.0;
 
   return moon;
 }
@@ -340,7 +350,12 @@ fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> Terrain {
   var d0 = d1;
   
   let pt_amp = 10.0;
-  let tx = tex_triplanar_mapping(rPos, uv, PLANET_RADIUS, pt_amp);
+  let tx = tex_triplanar_mapping(
+    rPos, uv, 
+    PLANET_RADIUS, pt_amp,
+    planet_tex, planet_sampler
+  );
+
   d1 += tx.x;
   d1 += tx.y;
   
@@ -356,7 +371,7 @@ fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> Terrain {
   let ice_switch = step(0.95, latitude);
   // Dont add extra texture to polar mountains
   let polar_flats_switch = step(length(rPos - CENTER), WATER_LEVEL);
-  d1 += polar_flats_switch*ice_switch*tx.w*1.8;
+  d1 += ice_switch*tx.w*1.8;
   
   var moon = get_moon(pos, uv);
 
@@ -424,7 +439,7 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
   var ro: vec3<f32> = vec3(0.0, 0.0, -300.0);
   ro = rotate3d(ro, vp.y_rot, vp.x_rot);
 
-  let look_at: vec3<f32> = vec3(0.0, 0.0, 0.0);
+  let look_at: vec3<f32> = vec3(0.0, 0.0, -100.0);
 
   var rd: vec3<f32> = (get_cam(ro, look_at) * normalize(vec4(uv * FOV, 1.0, 0.0))).xyz;
   let terrain = ray_march(ro, rd, uv, look_at);
@@ -448,16 +463,15 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
       material.ice = 1.0*ef;
       material.rock = 1.0 - 1.0*ef;
       col += get_light(cam_pos, rd, uv, material)*ice_clr;
-    } 
-    if latitude > 0.95 {
+    } else if latitude > 0.95 {
       let ef = smoothstep(0.95, 0.96, latitude);
       let ice_clr = mix(ROCK_CLR, ICE_CLR, ef);
       material.ice = 1.0*ef;
       col += get_light(cam_pos, rd, uv, material)*ice_clr;
     // UNDERWATER
     } else if dist_origin < WATER_LEVEL {
-      let rg = max(0.0, (1.0 - wd)*0.1);
-      let b = 1.0 - 0.1*wd;
+      let rg = max(0.0, (1.0 - wd)*0.05);
+      let b = 1.0 - 0.15*wd;
       let water_clr = vec3(rg, rg, b);
       material.water = 1.0;
       col += get_light(cam_pos, rd, uv, material)*water_clr;
