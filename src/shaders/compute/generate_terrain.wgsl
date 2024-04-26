@@ -8,6 +8,10 @@ const I_SCREEN_HEIGHT: i32 = 768;
 const PLANET_TEX_WIDTH: f32 = 2048.0;
 const PLANET_TEX_HEIGHT: f32 = 2048.0;
 
+const MOON_TEX_WIDTH: f32 = 512.0;
+const MOON_TEX_HEIGHT: f32 = 512.0;
+const NUM_CRATERS: u32 = 4;
+
 const MIN_POSITIVE_F32: f32 = 0x1.0p-126f;
 
 const m2: mat2x2<f32> = mat2x2(
@@ -105,9 +109,9 @@ fn generate_planet_terrain_map(@builtin(global_invocation_id) id: vec3<u32>) {
   PLANET_TEX_HEIGHT)) - 1.0;
 
   var ptx = textureLoad(planet_terrain, tx_coord);
-  let t1 = fbm(ptx_uv, 11, 0.5)*1.432417;
-  let t2 = fbm(ptx_uv, 3, 0.5)*-0.541793;
-  let t3 = fbm(ptx_uv, 9, 0.5)*0.175379;
+  let t1 = fbm(ptx_uv, 11, 0.51)*1.432417;
+  let t2 = fbm(ptx_uv, 3, 0.53)*-0.541793;
+  let t3 = fbm(ptx_uv, 9, 0.49)*0.175379;
 
   let ice_noise = fbm(ptx_uv, 11, 0.125);
 
@@ -116,21 +120,41 @@ fn generate_planet_terrain_map(@builtin(global_invocation_id) id: vec3<u32>) {
   textureStore(planet_terrain, tx_coord, ptx);
 }
 
+fn generate_craters(tx_uv: vec2<f32>, height: f32) -> f32 {
+  var crater = vec2(-0.8, -0.8);
+  var d = height;
+
+  for (var i: u32 = 0u; i < NUM_CRATERS; i++) {
+    let dist = length(crater - tx_uv);
+
+    if dist >= 0.06 && dist < 0.08 {
+      d += smoothstep(0.08, 0.06, dist);
+    }
+    
+    crater += vec2(0.4);
+  }
+
+  return d;
+}
+
 @compute 
 @workgroup_size(32, 32, 1) 
 fn generate_moon_terrain_map(@builtin(global_invocation_id) id: vec3<u32>) {
   let tx_coord: vec2<u32> = id.xy;
-  let mtx_uv: vec2<f32> = ((2.0 * vec2(f32(tx_coord.x), f32(tx_coord.y))) / vec2(PLANET_TEX_WIDTH,
-  PLANET_TEX_HEIGHT)) - 1.0;
+  let mtx_uv: vec2<f32> = ((2.0 * vec2(f32(tx_coord.x), f32(tx_coord.y))) / vec2(MOON_TEX_WIDTH,
+  MOON_TEX_HEIGHT)) - 1.0;
 
-  var mtx = textureLoad(planet_terrain, tx_coord);
-  let t1 = fbm(mtx_uv, 5, 0.51)*0.41793;
-  let t2 = fbm(mtx_uv, 3, 0.49)*-0.2111;
-  let t3 = fbm(mtx_uv, 7, 0.47)*0.19373;
+  var mtx = textureLoad(moon_terrain, tx_coord);
+  let t1 = fbm(mtx_uv, 5, 0.51)*0.041793;
+  let t2 = fbm(mtx_uv, 3, 0.49)*-0.02111;
+  let t3 = fbm(mtx_uv, 7, 0.47)*0.019373;
 
-  let crater_noise = fbm(mtx_uv, 11, 0.125)*0.15431;
+  let craters = generate_craters(mtx_uv, 0.0);
+  debug_arr[id.x] = vec4(craters);
+  mtx.x += t1;
+  mtx.y += t2;
+  mtx.z += t3;
+  mtx.w += craters;
 
-  mtx += vec4(t1, t2, t3, crater_noise);
-
-  textureStore(planet_terrain, tx_coord, mtx);
+  textureStore(moon_terrain, tx_coord, mtx);
 }
