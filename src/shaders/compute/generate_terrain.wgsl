@@ -120,21 +120,47 @@ fn generate_planet_terrain_map(@builtin(global_invocation_id) id: vec3<u32>) {
   textureStore(planet_terrain, tx_coord, ptx);
 }
 
-fn generate_craters(tx_uv: vec2<f32>, height: f32) -> f32 {
+// PCG AND SEED
+var<private> seed: u32 = 1234;
+
+fn pcg_u32() -> u32 {
+  let old_seed = seed + 747796405u + 2891336453u;
+  let word = ((old_seed >> ((old_seed >> 28u) + 4u)) ^ old_seed) * 277803737u;
+  seed = (word >> 22u) ^ word;
+  return word;
+}
+
+fn pcg_f32() -> f32 {
+  let state = pcg_u32();
+  return f32(state) / f32(0xffffffffu);
+}
+
+
+struct Crater {
+  height: f32,
+  clr: f32,
+}
+
+fn generate_craters(tx_uv: vec2<f32>, height: f32) -> Crater {
   var crater = vec2(-0.8, -0.8);
   var d = height;
+  var clr = 0.0;
+  let shaded = 0.2;
 
   for (var i: u32 = 0u; i < NUM_CRATERS; i++) {
     let dist = length(crater - tx_uv);
+    let start = pcg_f32()*0.15;
+    let end = start + 0.1;
 
-    if dist >= 0.06 && dist < 0.08 {
-      d += smoothstep(0.08, 0.06, dist);
-    }
+    let s_switch = step(start, dist);
+    let e_switch = step(dist, end);
+    d += smoothstep(start, end, dist)*s_switch*e_switch;
+    clr += shaded*s_switch*e_switch;
     
     crater += vec2(0.4);
   }
 
-  return d;
+  return Crater(d, clr);
 }
 
 @compute 
@@ -145,16 +171,14 @@ fn generate_moon_terrain_map(@builtin(global_invocation_id) id: vec3<u32>) {
   MOON_TEX_HEIGHT)) - 1.0;
 
   var mtx = textureLoad(moon_terrain, tx_coord);
-  let t1 = fbm(mtx_uv, 5, 0.51)*0.041793;
-  let t2 = fbm(mtx_uv, 3, 0.49)*-0.02111;
-  let t3 = fbm(mtx_uv, 7, 0.47)*0.019373;
+  let t1 = fbm(mtx_uv, 5, 0.51)*0.41793;
+  let t2 = fbm(mtx_uv, 7, 0.47)*0.19373;
 
   let craters = generate_craters(mtx_uv, 0.0);
-  debug_arr[id.x] = vec4(craters);
   mtx.x += t1;
   mtx.y += t2;
-  mtx.z += t3;
-  mtx.w += craters;
+  mtx.z += craters.height;
+  mtx.w += craters.clr;
 
   textureStore(moon_terrain, tx_coord, mtx);
 }
