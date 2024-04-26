@@ -26,6 +26,7 @@ const WATER_LEVEL: f32 = 50.3;
 const SAND_LEVEL: f32 = WATER_LEVEL + 0.2 ;
 const PLANT_LEVEL: f32 = WATER_LEVEL + 2.3;
 const ICE_LEVEL: f32 = WATER_LEVEL + 3.3;
+const PLANET_LIMIT: f32 = WATER_LEVEL + 10.0;
 
 // Steepness thresholds
 const SAND_THRESHOLD: f32 = 10.0;
@@ -45,6 +46,7 @@ const ROCK_REFLECTIVITY: f32 = 0.35;
 const SAND_REFLECTIVITY: f32 = 0.5;
 const WATER_REFLECTIVITY: f32 = 0.9;
 const ICE_REFLECTIVITY: f32 = 1.0;
+const MOON_REFLECTIVITY: f32 = 0.8;
 
 const m2: mat2x2<f32> = mat2x2(
   0.80, 0.60,
@@ -144,6 +146,7 @@ struct MaterialEnum {
   rock: f32,
   plant: f32,
   sand: f32,
+  moon: f32,
 }
 
 fn get_light(
@@ -171,6 +174,7 @@ fn get_light(
   reflect += material.rock*ROCK_REFLECTIVITY;
   reflect += material.plant*PLANT_REFLECTIVITY;
   reflect += material.sand*SAND_REFLECTIVITY;
+  reflect += material.moon*MOON_REFLECTIVITY;
   let spec_ref = specular*reflect;
   let diff_ref = diff*reflect;
 
@@ -264,47 +268,27 @@ fn calculate_slope(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
 // SIGNED DISTANCE FUNCTIONS
 // Found at the brilliant Inigo Quilezles' site here:
 // https://iquilezles.org/articles/smin/
-fn unionSDF(d1: f32, d2: f32) -> f32 {
-  return min(d1, d2);
-}
-
-fn subtractSDF(d1: f32, d2: f32) -> f32 {
-  return max(-d1, d2);
-}
-
-fn smooth_unionSDF(d1: f32,  d2: f32, k: f32) -> f32 {
-    let h = clamp( 0.5 + 0.5*(d2-d1)/k, 0.0, 1.0 );
-    return mix( d2, d1, h ) - k*h*(1.0-h);
-}
-
-fn smooth_subtractSDF(d1: f32, d2: f32, k: f32 ) -> f32 {
-    let h = clamp( 0.5 - 0.5*(d2+d1)/k, 0.0, 1.0 );
-    return mix( d2, -d1, h ) + k*h*(1.0-h);
-}
+// fn unionSDF(d1: f32, d2: f32) -> f32 {
+//   return min(d1, d2);
+// }
+// 
+// fn subtractSDF(d1: f32, d2: f32) -> f32 {
+//   return max(-d1, d2);
+// }
+// 
+// fn smooth_unionSDF(d1: f32,  d2: f32, k: f32) -> f32 {
+//     let h = clamp( 0.5 + 0.5*(d2-d1)/k, 0.0, 1.0 );
+//     return mix( d2, d1, h ) - k*h*(1.0-h);
+// }
+// 
+// fn smooth_subtractSDF(d1: f32, d2: f32, k: f32 ) -> f32 {
+//     let h = clamp( 0.5 - 0.5*(d2+d1)/k, 0.0, 1.0 );
+//     return mix( d2, -d1, h ) + k*h*(1.0-h);
+// }
+// 
 
 fn sphereSDF(pos: vec3<f32>, radius: f32) -> f32 {
   return length(pos) - radius;
-}
-
-fn ellipsoidSDF(pos: vec3<f32>, radius: f32) -> f32 {
-  let k0 = length(pos / radius);
-  let k1 = length(pos / (radius*radius));
-  return k0*(k0 - 1.0) / k1;
-}
-
-// PCG AND SEED
-var<private> seed: u32 = 1234;
-
-fn pcg_u32() -> u32 {
-    let old_seed = seed + 747796405u + 2891336453u;
-    let word = ((old_seed >> ((old_seed >> 28u) + 4u)) ^ old_seed) * 277803737u;
-    seed = (word >> 22u) ^ word;
-    return word;
-}
-
-fn pcg_f32() -> f32 {
-    let state = pcg_u32();
-    return f32(state) / f32(0xffffffffu);
 }
 
 // MOON
@@ -319,11 +303,16 @@ fn get_moon_position() -> vec3<f32> {
   return vec3(0.0, 0.0, 100.0);
 }
 
-fn get_moon(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
+struct Moon {
+  dist: f32,
+  crater_clr: f32,
+}
+
+fn get_moon(pos: vec3<f32>, uv: vec2<f32>) -> Moon {
   let moon_offset = get_moon_position();
   let moon_pos = pos + moon_offset;
-  var moon = sphereSDF(moon_pos, MOON_RADIUS);
-  let mt_amp = 0.2;
+  var dist = sphereSDF(moon_pos, MOON_RADIUS);
+  let mt_amp = 1.0;
 
   let mtx = tex_triplanar_mapping(
     moon_pos, uv, 
@@ -331,17 +320,17 @@ fn get_moon(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
     moon_tex, moon_sampler,
   );
   
-  //moon += mtx.x;
-  //moon += mtx.y;
-  //moon += mtx.z;
-  moon += mtx.w*20.0;
+  dist += mtx.z*0.03;
+  dist += mtx.x;
+  dist += mtx.y;
 
-  return moon;
+  return Moon(dist, mtx.w);
 }
 
 struct Terrain {
   dist: f32,
   water_depth: f32,
+  crater_clr: f32,
 }
 
 fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> Terrain {
@@ -375,9 +364,9 @@ fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> Terrain {
   
   var moon = get_moon(pos, uv);
 
-  d1 = min(moon, d1);
+  d1 = min(moon.dist, d1);
   
-  return Terrain(d1, water_depth);
+  return Terrain(d1, water_depth, moon.crater_clr);
 }
 
 fn map(pos: vec3<f32>, uv: vec2<f32>) -> Terrain {
@@ -386,7 +375,7 @@ fn map(pos: vec3<f32>, uv: vec2<f32>) -> Terrain {
   let t = get_terrain(pos, uv);
   d += t.dist;
 
-  return Terrain(d, t.water_depth);
+  return Terrain(d, t.water_depth, t.crater_clr);
 }
 
 // RAY MARCHING
@@ -405,6 +394,7 @@ fn get_normal_rm(pos: vec3<f32>, radius: f32) -> vec3<f32> {
 struct TerrainPos {
   dist: f32,
   water_depth: f32,
+  crater_clr: f32,
   pos: vec3<f32>,
 }
 
@@ -412,13 +402,15 @@ fn ray_march(ro: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>, look_at: vec3<f32>) ->
   let steps = i32(rp.max_steps);
   var dist = 0.0;
   var water_depth = 0.0;
+  var crater_clr = 0.0;
   var p = vec3(0.0);
 
   for (var i: i32 = 0; i < steps; i++) {
     let pos = ro + dist * rd;
     let t = map(pos, uv);
     let hit = t.dist;
-    water_depth = t.water_depth; 
+    water_depth = t.water_depth;
+    crater_clr = t.crater_clr;
     p = pos;
 
     if (abs(hit) < rp.epsilon) {
@@ -431,7 +423,7 @@ fn ray_march(ro: vec3<f32>, rd: vec3<f32>, uv: vec2<f32>, look_at: vec3<f32>) ->
     }
   }
 
-  return TerrainPos(dist, water_depth, p);
+  return TerrainPos(dist, water_depth, crater_clr, p);
 }
 
 // RENDERING
@@ -445,11 +437,12 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
   let terrain = ray_march(ro, rd, uv, look_at);
   let dist: f32 = terrain.dist;
   let wd = terrain.water_depth;
+  let crater = terrain.crater_clr;
   let steepness = calculate_slope(terrain.pos, uv);
 
   let cam_pos = ro + dist * rd;
   var col: vec3<f32> = vec3(0.0);
-  var material = MaterialEnum(0.0, 0.0, 0.0, 0.0, 0.0);
+  var material = MaterialEnum(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 
   if (dist < rp.max_dist) {
     let dist_origin: f32 = length(cam_pos);
@@ -457,7 +450,10 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
     let adjusted_ice_level = ICE_LEVEL - latitude*1.8;
 
     // ICE
-    if dist_origin > adjusted_ice_level {
+    if dist_origin > PLANET_LIMIT {
+      material.moon += 1.0;
+      col += get_light(cam_pos, rd, uv, material)*ICE_CLR - crater;
+    } else if dist_origin > adjusted_ice_level {
       let ef = smoothstep(adjusted_ice_level, adjusted_ice_level + 1.0, dist_origin);
       let ice_clr = mix(ROCK_CLR, ICE_CLR, ef);
       material.ice = 1.0*ef;
