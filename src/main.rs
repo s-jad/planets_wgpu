@@ -27,7 +27,8 @@ fn main() {
 
     let mut state = futures::executor::block_on(State::new(window.into()));
 
-    state.init_terrain();
+    state.init_planet_terrain();
+    state.init_moon_terrain();
 
     event_loop
         .run(move |event, elwt| match event {
