@@ -1,3 +1,4 @@
+const PI: f32 = 3.14159265358979323846;
 const SCREEN_WIDTH: f32 = 1376.0;
 const SCREEN_HEIGHT: f32 = 768.0;
 const I_SCREEN_WIDTH: i32 = 1376;
@@ -8,9 +9,11 @@ const I_SCREEN_HEIGHT: i32 = 768;
 const PLANET_TEX_WIDTH: f32 = 2048.0;
 const PLANET_TEX_HEIGHT: f32 = 2048.0;
 
-const MOON_TEX_WIDTH: f32 = 512.0;
-const MOON_TEX_HEIGHT: f32 = 512.0;
+const MOON_TEX_WIDTH: f32 = 1024.0;
+const MOON_TEX_HEIGHT: f32 = 1024.0;
 const NUM_CRATERS: u32 = 4;
+const CRATER_DEPTH: f32 = 0.5;
+const MIN_CRATER_RAD: f32 = 0.15;
 
 const MIN_POSITIVE_F32: f32 = 0x1.0p-126f;
 
@@ -135,29 +138,47 @@ fn pcg_f32() -> f32 {
   return f32(state) / f32(0xffffffffu);
 }
 
-
 struct Crater {
   height: f32,
   clr: f32,
+}
+
+fn crater_bowl(x: f32) -> f32 {
+ return -pow(abs(x), 2.5) + 1.0;
+}
+
+fn crater_ridge(x: f32) -> f32 {
+ return pow(abs(sin(PI * x / 2.0)), 1.5);
+}
+
+fn linear_scale(low: f32, high: f32, x: f32) -> f32 {
+    return clamp((x - low) / (high - low), 0.0, 1.0);
 }
 
 fn generate_craters(tx_uv: vec2<f32>, height: f32) -> Crater {
   var crater = vec2(-0.8, -0.8);
   var d = height;
   var clr = 0.0;
-  let shaded = 0.2;
+  let shaded = 0.15;
 
   for (var i: u32 = 0u; i < NUM_CRATERS; i++) {
     let dist = length(crater - tx_uv);
-    let start = pcg_f32()*0.15;
-    let end = start + 0.1;
+    let radius = max(MIN_CRATER_RAD, pcg_f32()*0.25);
 
-    let s_switch = step(start, dist);
-    let e_switch = step(dist, end);
-    d += smoothstep(start, end, dist)*s_switch*e_switch;
-    clr += shaded*s_switch*e_switch;
+    let b_switch = step(dist, radius);
+    let r_switch = step(dist, radius + 0.1);
+ 
+    let x = linear_scale(0.0, radius, dist);
+    var cbowl = CRATER_DEPTH*crater_bowl(x)*b_switch;
+
+    let y = linear_scale(radius, radius+0.1, dist);
+    let cridge = (crater_ridge(y) - 1.0)*r_switch;
+
+    d += (cbowl*3.0 + cridge) * 0.3;
+    clr += shaded*b_switch;
     
-    crater += vec2(0.4);
+    let new_crater_pos_diff = vec2(max(0.4, pcg_f32()*0.6), max(0.4, pcg_f32()*0.6));
+    crater += new_crater_pos_diff;
   }
 
   return Crater(d, clr);
@@ -174,7 +195,7 @@ fn generate_moon_terrain_map(@builtin(global_invocation_id) id: vec3<u32>) {
   let t1 = fbm(mtx_uv, 5, 0.51)*0.41793;
   let t2 = fbm(mtx_uv, 7, 0.47)*0.19373;
 
-  let craters = generate_craters(mtx_uv, 0.0);
+  let craters = generate_craters(mtx_uv, mtx.z);
   mtx.x += t1;
   mtx.y += t2;
   mtx.z += craters.height;
