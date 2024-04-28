@@ -7,8 +7,8 @@ pub(crate) const CLIP_FAR: f32 = 300.0;
 
 pub(crate) const PLANET_TEXTURE_WIDTH: u32 = 2048;
 pub(crate) const PLANET_TEXTURE_HEIGHT: u32 = 2048;
-pub(crate) const MOON_TEXTURE_WIDTH: u32 = 512;
-pub(crate) const MOON_TEXTURE_HEIGHT: u32 = 512;
+pub(crate) const MOON_TEXTURE_WIDTH: u32 = 1024;
+pub(crate) const MOON_TEXTURE_HEIGHT: u32 = 1024;
 
 pub(crate) const PLANET_TEX_DISPATCH_SIZE_X: u32 = ((PLANET_TEXTURE_WIDTH).saturating_add(32)) / 32;
 pub(crate) const PLANET_TEX_DISPATCH_SIZE_Y: u32 =
