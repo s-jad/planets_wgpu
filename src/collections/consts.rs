@@ -1,9 +1,6 @@
 pub(crate) const SCREEN_WIDTH: u32 = 1376;
 pub(crate) const SCREEN_HEIGHT: u32 = 768;
 pub(crate) const ASPECT: f32 = SCREEN_WIDTH as f32 / SCREEN_HEIGHT as f32;
-pub(crate) const FOV_RAD: f32 = 0.1708;
-pub(crate) const CLIP_NEAR: f32 = 0.1;
-pub(crate) const CLIP_FAR: f32 = 300.0;
 
 pub(crate) const PLANET_TEXTURE_WIDTH: u32 = 2048;
 pub(crate) const PLANET_TEXTURE_HEIGHT: u32 = 2048;
