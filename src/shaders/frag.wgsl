@@ -9,14 +9,11 @@ const INV_ASPECT: f32 = SCREEN_HEIGHT / SCREEN_WIDTH;
 // Combined with placing the camera extremely far from the objects
 const FOV: f32 = 0.349066; // 20 degrees
 
-const TEX_WIDTH: f32 = 2048.0;
-const TEX_HEIGHT: f32 = 2048.0;
-
 const CENTER: vec3<f32> = vec3(0.0);
 const PLANET_ROTATION: f32 = 0.1;
 const PLANET_RADIUS: f32 = 50.0;
 
-const MOON_RADIUS: f32 = 5.0;
+const MOON_RADIUS: f32 = 8.0;
 const MOON_ORBIT_SPEED: f32 = 0.2;
 const MOON_ORBIT_RADIUS: f32 = 75.0;
 const MOON_ORBIT_INCLINATION: f32 = 5.0;
@@ -293,14 +290,12 @@ fn sphereSDF(pos: vec3<f32>, radius: f32) -> f32 {
 
 // MOON
 fn get_moon_position() -> vec3<f32> {
-  let angle = 1.0; // tu.time*MOON_ORBIT_SPEED;
+  let angle = tu.time*MOON_ORBIT_SPEED;
   let x = MOON_ORBIT_RADIUS*cos(angle);
   let z = MOON_ORBIT_RADIUS*sin(angle);
   let y = MOON_ORBIT_INCLINATION*sin(angle)*3.0;
 
-  //return vec3(x, y - MOON_ORBIT_INCLINATION - x*0.1, z);
-
-  return vec3(0.0, 0.0, 100.0);
+  return vec3(x, y - MOON_ORBIT_INCLINATION - x*0.1, z);
 }
 
 struct Moon {
@@ -320,7 +315,9 @@ fn get_moon(pos: vec3<f32>, uv: vec2<f32>) -> Moon {
     moon_tex, moon_sampler,
   );
   
-  dist += mtx.z*0.03;
+  // Craters
+  dist += mtx.z;
+  // Noise
   dist += mtx.x;
   dist += mtx.y;
 
@@ -360,7 +357,7 @@ fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> Terrain {
   let ice_switch = step(0.95, latitude);
   // Dont add extra texture to polar mountains
   let polar_flats_switch = step(length(rPos - CENTER), WATER_LEVEL);
-  d1 += ice_switch*tx.w*1.8;
+  d1 += polar_flats_switch*ice_switch*tx.x*0.2;
   
   var moon = get_moon(pos, uv);
 
@@ -431,7 +428,7 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
   var ro: vec3<f32> = vec3(0.0, 0.0, -300.0);
   ro = rotate3d(ro, vp.y_rot, vp.x_rot);
 
-  let look_at: vec3<f32> = vec3(0.0, 0.0, -100.0);
+  let look_at: vec3<f32> = vec3(0.0, 0.0, 0.0);
 
   var rd: vec3<f32> = (get_cam(ro, look_at) * normalize(vec4(uv * FOV, 1.0, 0.0))).xyz;
   let terrain = ray_march(ro, rd, uv, look_at);
@@ -452,7 +449,7 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
     // ICE
     if dist_origin > PLANET_LIMIT {
       material.moon += 1.0;
-      col += get_light(cam_pos, rd, uv, material)*ICE_CLR - crater;
+      col += max(vec3(0.2), get_light(cam_pos, rd, uv, material)*ICE_CLR - crater);
     } else if dist_origin > adjusted_ice_level {
       let ef = smoothstep(adjusted_ice_level, adjusted_ice_level + 1.0, dist_origin);
       let ice_clr = mix(ROCK_CLR, ICE_CLR, ef);
