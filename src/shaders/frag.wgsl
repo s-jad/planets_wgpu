@@ -34,6 +34,7 @@ const SAND_CLR1: vec3<f32> = vec3(0.8, 0.8, 0.1);
 const SAND_CLR2: vec3<f32> = vec3(0.3975, 0.775, 0.06);
 const PLANT_CLR1: vec3<f32> = vec3(0.05, 0.75, 0.02);
 const PLANT_CLR2: vec3<f32> = vec3(0.0, 0.25, 0.07);
+const PLANT_MASK: vec3<f32> = vec3(0.025, 0.5, 0.045);
 const EARTH_CLR: vec3<f32> = vec3(0.3, 0.18, 0.1);
 const ROCK_CLR: vec3<f32> = vec3(0.2, 0.2, 0.2);
 const ICE_CLR: vec3<f32> = vec3(1.0, 1.0, 1.0);
@@ -43,7 +44,7 @@ const ROCK_REFLECTIVITY: f32 = 0.35;
 const SAND_REFLECTIVITY: f32 = 0.5;
 const WATER_REFLECTIVITY: f32 = 0.9;
 const ICE_REFLECTIVITY: f32 = 1.0;
-const MOON_REFLECTIVITY: f32 = 0.8;
+const MOON_REFLECTIVITY: f32 = 0.6;
 
 const m2: mat2x2<f32> = mat2x2(
   0.80, 0.60,
@@ -78,7 +79,8 @@ struct ViewParams {
 
 @group(1) @binding(0) var<storage, read_write> rp: RayParams;
 @group(1) @binding(1) var<storage, read_write> vp: ViewParams;
-@group(1) @binding(8) var<storage, read_write> debug_arr: array<vec4<f32>>;
+@group(1) @binding(7) var<storage, read_write> debug_arr1: array<vec4<f32>>;
+@group(1) @binding(8) var<storage, read_write> debug_arr2: array<vec4<f32>>;
 @group(1) @binding(9) var<storage, read_write> debug: vec4<f32>;
 
 @group(2) @binding(0) var planet_tex: texture_2d<f32>;
@@ -236,10 +238,10 @@ fn tex_triplanar_mapping(
   
   // Calculate tex coordinates for each of the 3 planes
   // Shift slightly to avoid symmetries
-  var tex_XY = vec2(pos.x / l, pos.y / l) * 0.5 + 0.49;
+  var tex_XY = vec2(pos.x / l, pos.y / l) * 0.5 + 0.47;
   var tex_XZ = vec2(pos.x / l, pos.z / l) * 0.5 + 0.51;
-  var tex_YZ = vec2(pos.y / l, pos.z / l) * 0.5 + 0.53;
-  
+  var tex_YZ = vec2(pos.y / l, pos.z / l) * 0.5 + 0.55;
+
   // Calc normal, exp to sharpen borders between planes
   var n = abs(get_normal_rm(pos, radius));
   n *= n*n*n*n*n;
@@ -261,28 +263,6 @@ fn calculate_slope(pos: vec3<f32>, uv: vec2<f32>) -> f32 {
 
     return slope_in_degrees;
 }
-
-// SIGNED DISTANCE FUNCTIONS
-// Found at the brilliant Inigo Quilezles' site here:
-// https://iquilezles.org/articles/smin/
-// fn unionSDF(d1: f32, d2: f32) -> f32 {
-//   return min(d1, d2);
-// }
-// 
-// fn subtractSDF(d1: f32, d2: f32) -> f32 {
-//   return max(-d1, d2);
-// }
-// 
-// fn smooth_unionSDF(d1: f32,  d2: f32, k: f32) -> f32 {
-//     let h = clamp( 0.5 + 0.5*(d2-d1)/k, 0.0, 1.0 );
-//     return mix( d2, d1, h ) - k*h*(1.0-h);
-// }
-// 
-// fn smooth_subtractSDF(d1: f32, d2: f32, k: f32 ) -> f32 {
-//     let h = clamp( 0.5 - 0.5*(d2+d1)/k, 0.0, 1.0 );
-//     return mix( d2, -d1, h ) + k*h*(1.0-h);
-// }
-// 
 
 fn sphereSDF(pos: vec3<f32>, radius: f32) -> f32 {
   return length(pos) - radius;
@@ -341,12 +321,8 @@ fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> Terrain {
     PLANET_RADIUS, pt_amp,
     planet_tex, planet_sampler
   );
-
-  d1 += tx.x;
-  d1 += tx.y;
   
-  let high_alt = step(PLANT_LEVEL, length(rPos - CENTER));
-  d1 += tx.z;
+  d1 += tx.x;
 
   // Calc water depth for use in render
   let water_depth = max(0.0, d1 - d0);
@@ -357,8 +333,7 @@ fn get_terrain(pos: vec3<f32>, uv: vec2<f32>) -> Terrain {
   let ice_switch = step(0.95, latitude);
   // Dont add extra texture to polar mountains
   let polar_flats_switch = step(length(rPos - CENTER), WATER_LEVEL);
-  d1 += polar_flats_switch*ice_switch*tx.x*0.2;
-  
+  d1 += polar_flats_switch*ice_switch*tx.x*0.3;
   var moon = get_moon(pos, uv);
 
   d1 = min(moon.dist, d1);
@@ -473,10 +448,10 @@ fn render(uv: vec2<f32>) -> vec3<f32> {
       dist_origin < SAND_LEVEL
       && latitude < 0.75
     ) {
-      let ef = smoothstep(SAND_LEVEL - 0.1, SAND_LEVEL, dist_origin);
-      let beach_clr = mix(SAND_CLR1, SAND_CLR2, ef);
+      let ef = smoothstep(SAND_LEVEL - 0.15, SAND_LEVEL, dist_origin);
+      let beach_mix = mix(SAND_CLR1, SAND_CLR2, ef);
       material.sand = 1.0;
-      col += get_light(cam_pos, rd, uv, material)*beach_clr;
+      col += get_light(cam_pos, rd, uv, material)*beach_mix;
     // PLANTS
     } else if (
       dist_origin < PLANT_LEVEL - latitude*1.4 
@@ -521,6 +496,5 @@ fn main(@builtin(position) FragCoord: vec4<f32>) -> @location(0) vec4<f32> {
   color = render(uv);
 
 // -----------------------------------------------------------------------------------------------
-  
   return vec4<f32>(color, 1.0);
 }
