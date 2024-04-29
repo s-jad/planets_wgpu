@@ -6,13 +6,11 @@ use crate::collections::{
         PLANET_TEXTURE_WIDTH, PLANET_TEX_BUF_SIZE,
     },
     structs::{
-        BindGroups, Buffers, DebugParams, Params, PerspectiveUniform, Pipelines, RayParams,
-        ShaderModules, TerrainParams, Textures, TimeUniform, ViewParams,
+        BindGroups, Buffers, DebugParams, Params, Pipelines, RayParams, ShaderModules,
+        TerrainParams, Textures, TimeUniform, ViewParams,
     },
     vertices::{vertices_as_bytes, VERTICES},
 };
-
-use super::projection::get_perspective_projection;
 
 pub(crate) fn init_shader_modules(device: &wgpu::Device) -> ShaderModules {
     let vdesc = wgpu::ShaderModuleDescriptor {
@@ -67,13 +65,10 @@ pub(crate) fn init_params() -> Params {
         fov_degrees: 20.0,
     };
 
-    let perspective_uniform = get_perspective_projection();
-
     Params {
         terrain_params,
         ray_params,
         view_params,
-        perspective_uniform,
         debug_params,
     }
 }
@@ -93,13 +88,6 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
     let time_uniform = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Time Uniform Buffer"),
         size: std::mem::size_of::<f32>() as wgpu::BufferAddress,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-
-    let perspective_uniform = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Perspective Projection Matrix Uniform Buffer"),
-        size: std::mem::size_of::<PerspectiveUniform>() as wgpu::BufferAddress,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -172,8 +160,8 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
         mapped_at_creation: false,
     });
 
-    let generic_debug_array = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Debug Shaders Buffer"),
+    let debug_array1 = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Debug Shaders Buffer 1"),
         size: (std::mem::size_of::<[[f32; 4]; 512]>()) as wgpu::BufferAddress,
         usage: wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_SRC
@@ -181,8 +169,24 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
         mapped_at_creation: false,
     });
 
-    let cpu_read_generic_debug_array = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("CPU Readable Buffer - Debug Shaders"),
+    let cpu_read_debug_array1 = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("CPU Readable Buffer 1 - Debug Shaders"),
+        size: (std::mem::size_of::<[[f32; 4]; 512]>()) as wgpu::BufferAddress,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    let debug_array2 = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Debug Shaders Buffer 2"),
+        size: (std::mem::size_of::<[[f32; 4]; 512]>()) as wgpu::BufferAddress,
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let cpu_read_debug_array2 = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("CPU Readable Buffer 2 - Debug Shaders"),
         size: (std::mem::size_of::<[[f32; 4]; 512]>()) as wgpu::BufferAddress,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
@@ -191,15 +195,16 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
     Buffers {
         vertex,
         time_uniform,
-        perspective_uniform,
         terrain_params,
         ray_params,
         view_params,
         debug_params,
         generic_debug,
         cpu_read_generic_debug,
-        generic_debug_array,
-        cpu_read_generic_debug_array,
+        debug_array1,
+        cpu_read_debug_array1,
+        debug_array2,
+        cpu_read_debug_array2,
     }
 }
 
@@ -208,49 +213,26 @@ pub(crate) fn init_bind_groups(
     buffers: &Buffers,
     textures: &Textures,
 ) -> BindGroups {
-    let uniform_bgl =
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(
-                            std::mem::size_of::<TimeUniform>() as _
-                        ),
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<
-                            PerspectiveUniform,
-                        >() as _),
-                    },
-                    count: None,
-                },
-            ],
-            label: Some("uniform_bind_group_layout"),
-        });
+    let uniform_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<TimeUniform>() as _),
+            },
+            count: None,
+        }],
+        label: Some("uniform_bind_group_layout"),
+    });
 
     let uniform_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: &uniform_bgl,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: buffers.time_uniform.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: buffers.perspective_uniform.as_entire_binding(),
-            },
-        ],
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: buffers.time_uniform.as_entire_binding(),
+        }],
         label: Some("uniforms_bind_group"),
     });
 
@@ -334,11 +316,11 @@ pub(crate) fn init_bind_groups(
             },
             wgpu::BindGroupEntry {
                 binding: 7,
-                resource: buffers.debug_params.as_entire_binding(),
+                resource: buffers.debug_array1.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 8,
-                resource: buffers.generic_debug_array.as_entire_binding(),
+                resource: buffers.debug_array2.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 9,
@@ -358,6 +340,18 @@ pub(crate) fn init_bind_groups(
                     has_dynamic_offset: false,
                     min_binding_size: wgpu::BufferSize::new(
                         std::mem::size_of::<TerrainParams>() as _
+                    ),
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 7,
+                visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(
+                        std::mem::size_of::<[[f32; 4]; 512]>() as _
                     ),
                 },
                 count: None,
@@ -396,8 +390,12 @@ pub(crate) fn init_bind_groups(
                 resource: buffers.terrain_params.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
+                binding: 7,
+                resource: buffers.debug_array1.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
                 binding: 8,
-                resource: buffers.generic_debug_array.as_entire_binding(),
+                resource: buffers.debug_array2.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 9,
@@ -593,10 +591,18 @@ pub(crate) fn init_pipelines(
         entry_point: "generate_moon_terrain_map",
     });
 
+    let generate_waves = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("Generate waves Pipeline"),
+        layout: Some(&compute_pipeline_layout),
+        module: &shader_modules.generate_terrain,
+        entry_point: "generate_waves",
+    });
+
     Pipelines {
         render,
         generate_planet_terrain,
         generate_moon_terrain,
+        generate_waves,
     }
 }
 
