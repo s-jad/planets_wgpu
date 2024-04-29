@@ -6,26 +6,20 @@ pub(crate) struct TimeUniform {
     pub(crate) time: f32,
 }
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub(crate) struct PerspectiveUniform {
-    pub(crate) adjoint: Matrix4<f32>,
-    pub(crate) inverse: Matrix4<f32>,
-}
-
 #[derive(Debug)]
 pub(crate) struct Buffers {
     pub(crate) vertex: wgpu::Buffer,
     pub(crate) time_uniform: wgpu::Buffer,
-    pub(crate) perspective_uniform: wgpu::Buffer,
     pub(crate) terrain_params: wgpu::Buffer,
     pub(crate) ray_params: wgpu::Buffer,
     pub(crate) view_params: wgpu::Buffer,
     pub(crate) debug_params: wgpu::Buffer,
     pub(crate) generic_debug: wgpu::Buffer,
     pub(crate) cpu_read_generic_debug: wgpu::Buffer,
-    pub(crate) generic_debug_array: wgpu::Buffer,
-    pub(crate) cpu_read_generic_debug_array: wgpu::Buffer,
+    pub(crate) debug_array1: wgpu::Buffer,
+    pub(crate) cpu_read_debug_array1: wgpu::Buffer,
+    pub(crate) debug_array2: wgpu::Buffer,
+    pub(crate) cpu_read_debug_array2: wgpu::Buffer,
 }
 
 #[derive(Debug)]
@@ -54,6 +48,7 @@ pub(crate) struct Pipelines {
     pub(crate) render: wgpu::RenderPipeline,
     pub(crate) generate_planet_terrain: wgpu::ComputePipeline,
     pub(crate) generate_moon_terrain: wgpu::ComputePipeline,
+    pub(crate) generate_waves: wgpu::ComputePipeline,
 }
 
 #[derive(Debug)]
@@ -70,7 +65,6 @@ pub(crate) struct Params {
     pub(crate) terrain_params: TerrainParams,
     pub(crate) ray_params: RayParams,
     pub(crate) view_params: ViewParams,
-    pub(crate) perspective_uniform: PerspectiveUniform,
     pub(crate) debug_params: DebugParams,
 }
 
