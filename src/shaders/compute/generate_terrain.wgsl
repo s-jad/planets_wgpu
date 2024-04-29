@@ -3,7 +3,6 @@ const SCREEN_WIDTH: f32 = 1376.0;
 const SCREEN_HEIGHT: f32 = 768.0;
 const I_SCREEN_WIDTH: i32 = 1376;
 const I_SCREEN_HEIGHT: i32 = 768;
-
 // Incorrect (2048x2048), but when corrected
 // produces less interesting terrain
 const PLANET_TEX_WIDTH: f32 = 2048.0;
@@ -29,7 +28,8 @@ const m2Inv: mat2x2<f32> = mat2x2(
 
 @group(0) @binding(0) var<uniform> tu: TimeUniform;
 
-@group(1) @binding(8) var<storage, read_write> debug_arr: array<vec4<f32>>;
+@group(1) @binding(7) var<storage, read_write> debug_arr1: array<vec4<f32>>;
+@group(1) @binding(8) var<storage, read_write> debug_arr2: array<vec4<f32>>;
 @group(1) @binding(9) var<storage, read_write> debug: vec4<f32>;
 
 @group(2) @binding(0) var planet_terrain: texture_storage_2d<rgba32float, read_write>;
@@ -112,13 +112,17 @@ fn generate_planet_terrain_map(@builtin(global_invocation_id) id: vec3<u32>) {
   PLANET_TEX_HEIGHT)) - 1.0;
 
   var ptx = textureLoad(planet_terrain, tx_coord);
-  let t1 = fbm(ptx_uv, 11, 0.51)*1.432417;
-  let t2 = fbm(ptx_uv, 3, 0.53)*-0.541793;
-  let t3 = fbm(ptx_uv, 9, 0.49)*0.175379;
 
-  let ice_noise = fbm(ptx_uv, 11, 0.125);
+  var t1 = fbm(ptx_uv, 11, 0.51)*1.032417;
+  t1 += fbm(ptx_uv, 5, 0.47)*0.9432;
+  t1 += fbm(ptx_uv, 3, 0.53)*-0.541793;
+  t1 += fbm(ptx_uv, 2, 0.53)*-0.441793;
+  t1 += fbm(ptx_uv, 9, 0.49)*0.175379;
+  
+  //var sand_mask = smoothstep(0.0, 0.5, fbm(ptx_uv, 2, 0.5)*3.0);
+  let ice_tex = fbm(ptx_uv, 11, 0.125);
 
-  ptx += vec4(t1, t2, t3, ice_noise);
+  ptx += vec4(t1, 0.0, 0.0, ice_tex);
 
   textureStore(planet_terrain, tx_coord, ptx);
 }
@@ -144,15 +148,15 @@ struct Crater {
 }
 
 fn crater_bowl(x: f32) -> f32 {
- return -pow(abs(x), 2.5) + 1.0;
+  return -pow(abs(x), 2.5) + 1.0;
 }
 
 fn crater_ridge(x: f32) -> f32 {
- return pow(abs(sin(PI * x / 2.0)), 1.5);
+  return pow(abs(sin(PI * x / 2.0)), 1.5);
 }
 
 fn linear_scale(low: f32, high: f32, x: f32) -> f32 {
-    return clamp((x - low) / (high - low), 0.0, 1.0);
+  return clamp((x - low) / (high - low), 0.0, 1.0);
 }
 
 fn generate_craters(tx_uv: vec2<f32>, height: f32) -> Crater {
@@ -192,7 +196,8 @@ fn generate_moon_terrain_map(@builtin(global_invocation_id) id: vec3<u32>) {
   MOON_TEX_HEIGHT)) - 1.0;
 
   var mtx = textureLoad(moon_terrain, tx_coord);
-  let t1 = fbm(mtx_uv, 5, 0.51)*0.41793;
+  var t1 = fbm(mtx_uv, 5, 0.51)*0.41793;
+  t1 += fbm(mtx_uv, 3, 0.49)*-0.31231;
   let t2 = fbm(mtx_uv, 7, 0.47)*0.19373;
 
   let craters = generate_craters(mtx_uv, mtx.z);
