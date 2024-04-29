@@ -233,4 +233,29 @@ impl<'a> State<'a> {
 
         self.queue.submit(Some(encoder.finish()));
     }
+
+    pub(crate) fn init_waves(&mut self) {
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Init waves - encoder"),
+            });
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Init waves - compute pass"),
+                timestamp_writes: None,
+            });
+            compute_pass.set_pipeline(&self.pipelines.generate_waves);
+            compute_pass.set_bind_group(0, &self.bind_groups.uniform_bg, &[]);
+            compute_pass.set_bind_group(1, &self.bind_groups.compute_bg, &[]);
+            compute_pass.set_bind_group(2, &self.bind_groups.texture_bg, &[]);
+            compute_pass.dispatch_workgroups(
+                PLANET_TEX_DISPATCH_SIZE_X,
+                PLANET_TEX_DISPATCH_SIZE_Y,
+                1,
+            );
+        }
+
+        self.queue.submit(Some(encoder.finish()));
+    }
 }
