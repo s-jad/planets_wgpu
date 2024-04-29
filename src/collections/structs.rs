@@ -1,5 +1,3 @@
-use nalgebra::Matrix4;
-
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub(crate) struct TimeUniform {
@@ -13,6 +11,7 @@ pub(crate) struct Buffers {
     pub(crate) terrain_params: wgpu::Buffer,
     pub(crate) ray_params: wgpu::Buffer,
     pub(crate) view_params: wgpu::Buffer,
+    pub(crate) planet_tex_buffer: wgpu::Buffer,
     pub(crate) debug_params: wgpu::Buffer,
     pub(crate) generic_debug: wgpu::Buffer,
     pub(crate) cpu_read_generic_debug: wgpu::Buffer,
@@ -48,15 +47,29 @@ pub(crate) struct Pipelines {
     pub(crate) render: wgpu::RenderPipeline,
     pub(crate) generate_planet_terrain: wgpu::ComputePipeline,
     pub(crate) generate_moon_terrain: wgpu::ComputePipeline,
-    pub(crate) generate_waves: wgpu::ComputePipeline,
 }
 
 #[derive(Debug)]
 pub(crate) struct Textures {
+    pub(crate) planet_tex: wgpu::Texture,
+    pub(crate) planet_tex_extent: wgpu::Extent3d,
     pub(crate) planet_sampler: wgpu::Sampler,
     pub(crate) planet_view: wgpu::TextureView,
     pub(crate) moon_sampler: wgpu::Sampler,
     pub(crate) moon_view: wgpu::TextureView,
+}
+
+#[derive(Debug)]
+pub(crate) struct PlanetTexture {
+    pub(crate) planet_tex: wgpu::Texture,
+    pub(crate) planet_tex_extent: wgpu::Extent3d,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct Point {
+    pub(crate) elevation: f32,
+    pub(crate) x: u32,
+    pub(crate) y: u32,
 }
 
 // PARAMETERS
