@@ -2,10 +2,10 @@ use super::control_state::{update_controls, KeyboardState};
 use crate::{
     collections::{
         consts::{
-            MOON_TEX_DISPATCH_SIZE_X, MOON_TEX_DISPATCH_SIZE_Y, PLANET_TEX_DISPATCH_SIZE_X,
-            PLANET_TEX_DISPATCH_SIZE_Y,
+            MOON_TEX_DISPATCH_SIZE_X, MOON_TEX_DISPATCH_SIZE_Y, PLANET_TEXTURE_HEIGHT,
+            PLANET_TEXTURE_WIDTH, PLANET_TEX_DISPATCH_SIZE_X, PLANET_TEX_DISPATCH_SIZE_Y,
         },
-        structs::{BindGroups, Buffers, Params, Pipelines},
+        structs::{BindGroups, Buffers, Params, Pipelines, PlanetTexture, Point},
         vertices::VERTICES,
     },
     init::init_functions::{
@@ -30,6 +30,7 @@ pub(crate) struct State<'a> {
     pub(crate) bind_groups: BindGroups,
     pub(crate) pipelines: Pipelines,
     pub(crate) controls: KeyboardState,
+    pub(crate) planet_texture: PlanetTexture,
     pub(crate) app_time: std::time::Instant,
     // Keep window at the bottom,
     // must be dropped after surface
@@ -104,6 +105,10 @@ impl<'a> State<'a> {
         let bind_groups = init_bind_groups(&device, &buffers, &textures);
         let pipelines = init_pipelines(&device, &bind_groups, &shader_modules);
         let controls = KeyboardState::new();
+        let planet_texture = PlanetTexture {
+            planet_tex: textures.planet_tex,
+            planet_tex_extent: textures.planet_tex_extent,
+        };
 
         Self {
             device,
@@ -116,6 +121,7 @@ impl<'a> State<'a> {
             buffers,
             bind_groups,
             controls,
+            planet_texture,
             app_time,
             // Keep at bottom, must be dropped after surface
             // and declared after it
@@ -234,28 +240,121 @@ impl<'a> State<'a> {
         self.queue.submit(Some(encoder.finish()));
     }
 
-    pub(crate) fn init_waves(&mut self) {
+    fn copy_tex_to_buffer(&mut self) {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Init waves - encoder"),
+                label: Some("Generate moon terrain - encoder"),
             });
-        {
-            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Init waves - compute pass"),
-                timestamp_writes: None,
-            });
-            compute_pass.set_pipeline(&self.pipelines.generate_waves);
-            compute_pass.set_bind_group(0, &self.bind_groups.uniform_bg, &[]);
-            compute_pass.set_bind_group(1, &self.bind_groups.compute_bg, &[]);
-            compute_pass.set_bind_group(2, &self.bind_groups.texture_bg, &[]);
-            compute_pass.dispatch_workgroups(
-                PLANET_TEX_DISPATCH_SIZE_X,
-                PLANET_TEX_DISPATCH_SIZE_Y,
-                1,
-            );
-        }
+
+        encoder.copy_texture_to_buffer(
+            wgpu::ImageCopyTexture {
+                texture: &self.planet_texture.planet_tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::ImageCopyBuffer {
+                buffer: &self.buffers.planet_tex_buffer,
+                layout: wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(PLANET_TEXTURE_WIDTH * 4 * 4), // 16bytes -> 4*f32
+                    rows_per_image: Some(PLANET_TEXTURE_HEIGHT),
+                },
+            },
+            wgpu::Extent3d {
+                width: PLANET_TEXTURE_WIDTH,
+                height: PLANET_TEXTURE_HEIGHT,
+                depth_or_array_layers: 1,
+            },
+        );
 
         self.queue.submit(Some(encoder.finish()));
+    }
+
+    fn copy_buffer_data(&mut self) -> Result<Vec<f32>, futures::channel::oneshot::Canceled> {
+        let buffer_slice = self.buffers.planet_tex_buffer.slice(..);
+        let (tx, rx) = futures::channel::oneshot::channel();
+
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx.send(result).unwrap();
+        });
+
+        self.device.poll(wgpu::Maintain::Wait);
+        let result = futures::executor::block_on(rx);
+
+        match result {
+            Ok(_) => {
+                let buf_view = buffer_slice.get_mapped_range();
+                let data: &[u8] = bytemuck::cast_slice(&buf_view);
+                let data_f32: &[[f32; 4]] = bytemuck::cast_slice(data);
+                let mut flattened_data = Vec::new();
+
+                for i in data_f32.into_iter() {
+                    flattened_data.extend(i.to_owned());
+                }
+
+                return Ok(flattened_data);
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    fn find_extreme_elevations(&self, map: Vec<f32>, count: usize) -> (Vec<Point>, Vec<Point>) {
+        let mut y = 0u32;
+
+        let mut indexed = map
+            .into_iter()
+            .enumerate()
+            .map(|(idx, val)| {
+                let x = idx as u32 % PLANET_TEXTURE_WIDTH;
+
+                if x == 0 && idx != 0 {
+                    y += 1;
+                }
+
+                return Point {
+                    elevation: val,
+                    x,
+                    y,
+                };
+            })
+            .collect::<Vec<Point>>();
+
+        println!("indexed first row + 1: {:?}", &indexed[0..2050]);
+
+        indexed.sort_unstable_by(|p1, p2| {
+            p1.elevation
+                .partial_cmp(&p2.elevation)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let min = indexed[0..count + 1].to_vec();
+        let max = indexed[(indexed.len() - count)..].to_vec();
+
+        return (max, min);
+    }
+
+    pub(crate) fn calculate_wave_dir(&mut self) {
+        self.copy_tex_to_buffer();
+        let height_map = self.copy_buffer_data();
+
+        match height_map {
+            Ok(map) => {
+                let elevation_map = map
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(idx, _)| idx % 4 == 0)
+                    .map(|(_, val)| val)
+                    .collect::<Vec<f32>>();
+
+                println!("elevation_map: {:?}", &elevation_map[0..128]);
+                let (max_values, min_values) = self.find_extreme_elevations(elevation_map, 16);
+
+                println!("min: {:?}", min_values);
+                println!("max: {:?}", max_values);
+            }
+            Err(e) => eprintln!("Error mapping planet texture buffer: {:?}", e),
+        }
     }
 }
