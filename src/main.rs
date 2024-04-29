@@ -29,6 +29,7 @@ fn main() {
 
     state.init_planet_terrain();
     state.init_moon_terrain();
+    state.init_waves();
 
     event_loop
         .run(move |event, elwt| match event {
