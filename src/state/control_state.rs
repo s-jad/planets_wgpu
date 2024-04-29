@@ -88,13 +88,89 @@ pub(crate) fn print_gpu_data<T: bytemuck::Pod + std::fmt::Debug>(
 
             // Print the boids current properties
             for (i, obj) in data.iter().enumerate() {
-                println!("{} {}:\n{:#?}", obj_label, i, obj);
+                println!("{} {}:\n{:?}", obj_label, i, obj);
             }
 
             drop(buf_view);
             buffer.unmap();
         }
         Err(e) => eprintln!("Error retrieving gpu data: {:?}", e),
+    }
+}
+
+pub(crate) fn print_gpu_interleave_two_buffers<
+    T: bytemuck::Pod + std::fmt::Debug + std::iter::IntoIterator,
+>(
+    device: &wgpu::Device,
+    buffer1: &wgpu::Buffer,
+    buffer2: &wgpu::Buffer,
+) where
+    <T as IntoIterator>::Item: std::fmt::Debug,
+{
+    // Map the buffer for reading
+    let buffer_slice1 = buffer1.slice(..);
+    let (tx1, rx1) = futures::channel::oneshot::channel();
+
+    buffer_slice1.map_async(wgpu::MapMode::Read, move |result| {
+        tx1.send(result).unwrap();
+    });
+
+    // Wait for the GPU to finish executing the commands
+    device.poll(wgpu::Maintain::Wait);
+    // Wait for the buffer to be mapped
+    let result1 = futures::executor::block_on(rx1);
+
+    // Map the buffer for reading
+    let buffer_slice2 = buffer2.slice(..);
+    let (tx2, rx2) = futures::channel::oneshot::channel();
+
+    buffer_slice2.map_async(wgpu::MapMode::Read, move |result| {
+        tx2.send(result).unwrap();
+    });
+
+    // Wait for the GPU to finish executing the commands
+    device.poll(wgpu::Maintain::Wait);
+    // Wait for the buffer to be mapped
+    let result2 = futures::executor::block_on(rx2);
+
+    match (result1, result2) {
+        (Ok(_), Ok(_)) => {
+            let buf_view1 = buffer_slice1.get_mapped_range();
+            let data1: &[T] = bytemuck::cast_slice(&buf_view1);
+            let buf_view2 = buffer_slice2.get_mapped_range();
+            let data2: &[T] = bytemuck::cast_slice(&buf_view2);
+
+            let mut flattened_data1 = Vec::new();
+            let mut flattened_data2 = Vec::new();
+
+            for i in data1.into_iter() {
+                flattened_data1.extend(i.to_owned());
+            }
+
+            for i in data2.into_iter() {
+                flattened_data2.extend(i.to_owned());
+            }
+
+            for (idx, item) in flattened_data1
+                .iter()
+                .zip(flattened_data2.iter())
+                .enumerate()
+            {
+                println!("\n{idx}:\n{:?}", item.0);
+                println!("{:?}", item.1);
+            }
+
+            drop(buf_view1);
+            drop(buf_view2);
+            buffer1.unmap();
+            buffer2.unmap();
+        }
+        (Err(e), Ok(_)) => eprintln!("Error retrieving gpu data from buffer1: {:?}", e),
+        (Ok(_), Err(e)) => eprintln!("Error retrieving gpu data from buffer2: {:?}", e),
+        (Err(e1), Err(e2)) => {
+            eprintln!("Error retrieving gpu data from buffer1: {:?}", e1);
+            eprintln!("Error retrieving gpu data from buffer2: {:?}", e2);
+        }
     }
 }
 
@@ -126,14 +202,6 @@ pub(crate) fn update_controls(state: &mut State) {
 fn debug_controls(state: &mut State) {
     let pressed = state.controls.get_keys();
 
-    let mut dval_f = 0.0f32;
-
-    if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowUp)) {
-        dval_f = 1.0f32;
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowDown)) {
-        dval_f = -1.0f32;
-    }
-
     if pressed.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
         print_gpu_data::<[f32; 4]>(
             &state.device,
@@ -142,20 +210,30 @@ fn debug_controls(state: &mut State) {
         );
         thread::sleep(time::Duration::from_millis(50));
         state.controls.set_mode(KeyboardMode::TERRAIN);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyA)) {
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::Digit1)) {
         print_gpu_data::<[[f32; 4]; 512]>(
             &state.device,
-            &state.buffers.cpu_read_generic_debug_array,
+            &state.buffers.cpu_read_debug_array1,
             "Debug",
         );
         thread::sleep(time::Duration::from_millis(50));
         state.controls.set_mode(KeyboardMode::TERRAIN);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyM)) {
-        let pole_start = &mut state.params.debug_params.pole_start;
-        *pole_start = f32::max(0.0, *pole_start + (0.05 * dval_f));
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyN)) {
-        let pole_scale = &mut state.params.debug_params.pole_scale;
-        *pole_scale = f32::max(0.0, *pole_scale + (0.05 * dval_f));
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::Digit2)) {
+        print_gpu_data::<[[f32; 4]; 512]>(
+            &state.device,
+            &state.buffers.cpu_read_debug_array2,
+            "Debug",
+        );
+        thread::sleep(time::Duration::from_millis(50));
+        state.controls.set_mode(KeyboardMode::TERRAIN);
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::Digit3)) {
+        print_gpu_interleave_two_buffers::<[[f32; 4]; 512]>(
+            &state.device,
+            &state.buffers.cpu_read_debug_array1,
+            &state.buffers.cpu_read_debug_array2,
+        );
+        thread::sleep(time::Duration::from_millis(50));
+        state.controls.set_mode(KeyboardMode::TERRAIN);
     }
 }
 
