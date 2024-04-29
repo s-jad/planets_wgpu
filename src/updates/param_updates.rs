@@ -7,9 +7,9 @@ pub(crate) fn update_view_params_buffer(state: &mut State) {
     let new_view_params = ViewParams {
         x_shift: state.params.view_params.x_shift,
         y_shift: state.params.view_params.y_shift,
+        zoom: state.params.view_params.zoom,
         x_rot: state.params.view_params.x_rot,
         y_rot: state.params.view_params.y_rot,
-        zoom: state.params.view_params.zoom,
         time_modifier: state.params.view_params.time_modifier,
         fov_degrees: state.params.view_params.fov_degrees,
     };
@@ -50,9 +50,17 @@ pub(crate) fn update_cpu_read_buffers(state: &mut State) {
     );
 
     encoder.copy_buffer_to_buffer(
-        &state.buffers.generic_debug_array,
+        &state.buffers.debug_array1,
         0,
-        &state.buffers.cpu_read_generic_debug_array,
+        &state.buffers.cpu_read_debug_array1,
+        0,
+        (std::mem::size_of::<[[f32; 4]; 512]>()) as wgpu::BufferAddress,
+    );
+
+    encoder.copy_buffer_to_buffer(
+        &state.buffers.debug_array2,
+        0,
+        &state.buffers.cpu_read_debug_array2,
         0,
         (std::mem::size_of::<[[f32; 4]; 512]>()) as wgpu::BufferAddress,
     );
