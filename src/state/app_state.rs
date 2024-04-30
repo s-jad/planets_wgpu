@@ -17,6 +17,7 @@ use crate::{
     },
 };
 use std::sync::Arc;
+use wgpu::util::DeviceExt;
 
 #[derive(Debug)]
 pub(crate) struct State<'a> {
@@ -244,7 +245,7 @@ impl<'a> State<'a> {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Generate moon terrain - encoder"),
+                label: Some("Generate moon terrain tex -> buf - encoder"),
             });
 
         encoder.copy_texture_to_buffer(
@@ -261,6 +262,48 @@ impl<'a> State<'a> {
                     bytes_per_row: Some(PLANET_TEXTURE_WIDTH * 4 * 4), // 16bytes -> 4*f32
                     rows_per_image: Some(PLANET_TEXTURE_HEIGHT),
                 },
+            },
+            wgpu::Extent3d {
+                width: PLANET_TEXTURE_WIDTH,
+                height: PLANET_TEXTURE_HEIGHT,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        self.queue.submit(Some(encoder.finish()));
+    }
+
+    fn copy_buffer_to_tex(&mut self, map: Vec<f32>) {
+        let map_slice = bytemuck::cast_slice(&map);
+
+        let tex_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Final map buffer"),
+                contents: map_slice,
+                usage: wgpu::BufferUsages::COPY_SRC,
+            });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Generate moon terrain buf -> tex - encoder"),
+            });
+
+        encoder.copy_buffer_to_texture(
+            wgpu::ImageCopyBuffer {
+                buffer: &tex_buffer,
+                layout: wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(PLANET_TEXTURE_WIDTH * 4 * 4), // 16bytes -> 4*f32
+                    rows_per_image: Some(PLANET_TEXTURE_HEIGHT),
+                },
+            },
+            wgpu::ImageCopyTexture {
+                texture: &self.planet_texture.planet_tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
             },
             wgpu::Extent3d {
                 width: PLANET_TEXTURE_WIDTH,
@@ -300,39 +343,72 @@ impl<'a> State<'a> {
         }
     }
 
-    fn find_extreme_elevations(&self, map: Vec<f32>, count: usize) -> (Vec<Point>, Vec<Point>) {
-        let mut y = 0u32;
+    fn find_extreme_elevations(&self, map: &Vec<Point>, count: usize) -> Vec<Point> {
+        let mut min_vals = Vec::with_capacity(count);
 
-        let mut indexed = map
-            .into_iter()
-            .enumerate()
-            .map(|(idx, val)| {
-                let x = idx as u32 % PLANET_TEXTURE_WIDTH;
+        // Avoid returning 16 points all clustered together on the map
+        let exclusion_zone = 512;
 
-                if x == 0 && idx != 0 {
-                    y += 1;
+        for _ in 0..count {
+            let mut current_min = Point {
+                elevation: std::f32::MAX,
+                x: std::u32::MAX,
+                y: std::u32::MAX,
+            };
+
+            for j in 0..map.len() {
+                let point = map[j];
+
+                // Skip this point if it's too close to any point in min_vals
+                if min_vals
+                    .iter()
+                    .any(|min_point| point.manhattan_distance(min_point) <= exclusion_zone)
+                {
+                    continue;
                 }
 
-                return Point {
-                    elevation: val,
-                    x,
-                    y,
-                };
-            })
-            .collect::<Vec<Point>>();
+                if point.elevation < current_min.elevation {
+                    current_min = point;
+                }
+            }
 
-        println!("indexed first row + 1: {:?}", &indexed[0..2050]);
+            min_vals.push(current_min);
+        }
 
-        indexed.sort_unstable_by(|p1, p2| {
-            p1.elevation
-                .partial_cmp(&p2.elevation)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        return min_vals;
+    }
 
-        let min = indexed[0..count + 1].to_vec();
-        let max = indexed[(indexed.len() - count)..].to_vec();
+    fn get_wave_directions(&mut self, map: &Vec<Point>, min_vals: Vec<Point>) -> Vec<(f32, f32)> {
+        let mut wave_dirs = Vec::with_capacity(map.len());
 
-        return (max, min);
+        for i in 0..map.len() {
+            let point = map[i];
+
+            // Find the nearest minimum elevation to point
+            let nearest_low_point: Point = min_vals.iter().fold(
+                Point {
+                    elevation: std::f32::MAX,
+                    x: 20000u32,
+                    y: 20000u32,
+                },
+                |mut current_nearest, val| {
+                    if current_nearest.manhattan_distance(&point) > val.manhattan_distance(&point) {
+                        current_nearest = *val;
+                    }
+
+                    return current_nearest;
+                },
+            );
+
+            // Waves should move away from the deeper point to the shallower areas
+            let dirx = point.x as f32 - nearest_low_point.x as f32;
+            let diry = point.y as f32 - nearest_low_point.y as f32;
+            let wdir = nalgebra::Vector2::new(dirx, diry);
+            let normalized = nalgebra::Unit::new_normalize(wdir);
+            wave_dirs.push((normalized.x, normalized.y));
+        }
+
+        return wave_dirs;
     }
 
     pub(crate) fn calculate_wave_dir(&mut self) {
@@ -340,19 +416,46 @@ impl<'a> State<'a> {
         let height_map = self.copy_buffer_data();
 
         match height_map {
-            Ok(map) => {
-                let elevation_map = map
-                    .into_iter()
+            Ok(mut map) => {
+                let mut y = 0u32;
+
+                let indexed_map = map
+                    .iter()
                     .enumerate()
-                    .filter(|(idx, _)| idx % 4 == 0)
-                    .map(|(_, val)| val)
-                    .collect::<Vec<f32>>();
+                    .filter_map(|(idx, val)| if idx % 4 == 0 { Some(val) } else { None })
+                    .enumerate()
+                    .map(|(idx, val)| {
+                        let x = idx as u32 % PLANET_TEXTURE_WIDTH;
 
-                println!("elevation_map: {:?}", &elevation_map[0..128]);
-                let (max_values, min_values) = self.find_extreme_elevations(elevation_map, 16);
+                        if x == 0 && idx != 0 {
+                            y += 1;
+                        }
 
-                println!("min: {:?}", min_values);
-                println!("max: {:?}", max_values);
+                        return Point {
+                            elevation: *val,
+                            x,
+                            y,
+                        };
+                    })
+                    .collect::<Vec<Point>>();
+
+                let min_values = self.find_extreme_elevations(&indexed_map, 16);
+
+                let wave_dirs = self.get_wave_directions(&indexed_map, min_values);
+
+                // Double-check that the map and wave_dirs are compatible
+                assert_eq!(
+                    map.len() / 4,
+                    wave_dirs.len(),
+                    "Mismatch in the number of wave directions and texture chunks"
+                );
+
+                for (c, (dx, dy)) in map.chunks_exact_mut(4).zip(wave_dirs.iter()) {
+                    c[1] = *dx;
+                    c[2] = *dy;
+                }
+
+                self.copy_buffer_to_tex(map);
             }
             Err(e) => eprintln!("Error mapping planet texture buffer: {:?}", e),
         }
