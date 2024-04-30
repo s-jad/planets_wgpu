@@ -72,6 +72,20 @@ pub(crate) struct Point {
     pub(crate) y: u32,
 }
 
+impl Point {
+    pub(crate) fn manhattan_distance(&self, other: &Point) -> u32 {
+        let dx = (self.x as i32 - other.x as i32).abs() as u32;
+        let dy = (self.y as i32 - other.y as i32).abs() as u32;
+        dx + dy
+    }
+}
+
+impl PartialOrd for Point {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        return self.elevation.partial_cmp(&other.elevation);
+    }
+}
+
 // PARAMETERS
 #[derive(Debug)]
 pub(crate) struct Params {
